@@ -87,6 +87,15 @@ namespace DigitalTwin.Navigation
         private readonly List<HotspotSlot> _pool = new List<HotspotSlot>();
         private float _refreshTimer;
 
+        /// <summary>
+        /// Grafo precalculado en el Editor (Tools > IFC > Generar grafo de navegacion). Si no
+        /// existe, el tour sigue funcionando con el criterio de proximidad: el grafo mejora la
+        /// navegacion pero no es un requisito para arrancar.
+        /// </summary>
+        private NavGraphAsset _grafo;
+        private readonly Dictionary<string, NavPointData> _puntosPorGlobalId =
+            new Dictionary<string, NavPointData>();
+
 
         public void Initialize(SceneModelIndex index, Canvas canvas)
         {
@@ -115,6 +124,11 @@ namespace DigitalTwin.Navigation
                 });
             }
 
+            foreach (var p in _points)
+                if (p.Meta != null && !string.IsNullOrEmpty(p.Meta.globalId))
+                    _puntosPorGlobalId[p.Meta.globalId] = p;
+
+            CargarGrafo();
             BuildUI();
 
             if (_points.Count == 0)
@@ -128,6 +142,37 @@ namespace DigitalTwin.Navigation
             GetComponent<TourCameraLook>()?.SyncFromTransform();
 
             RefreshHotspots();
+        }
+
+        /// <summary>
+        /// Carga el grafo desde Resources. Se busca por nombre y no por referencia asignada en el
+        /// Inspector porque todo el sistema se construye por codigo, sin tocar la escena.
+        /// </summary>
+        private void CargarGrafo()
+        {
+            _grafo = Resources.Load<NavGraphAsset>("NavGraph");
+
+            if (_grafo == null || _grafo.Nodos.Count == 0)
+            {
+                _grafo = null;
+                Debug.LogWarning("[DigitalTwin] No hay grafo de navegacion (Assets/Resources/NavGraph.asset). " +
+                                 "Se usara el criterio de proximidad, que funciona pero puede solapar hotspots " +
+                                 "en salas diafanas. Generalo con Tools > IFC > Generar grafo de navegacion.");
+                return;
+            }
+
+            int reconocidos = 0;
+            foreach (var nodo in _grafo.Nodos)
+                if (_puntosPorGlobalId.ContainsKey(nodo.GlobalId)) reconocidos++;
+
+            Debug.Log($"[DigitalTwin] Grafo de navegacion cargado: {_grafo.Nodos.Count} nodos, " +
+                      $"{_grafo.ContarAristas()} aristas, generado el {_grafo.GeneradoEl}. " +
+                      $"{reconocidos} de {_grafo.Nodos.Count} nodos localizados en la escena.");
+
+            if (reconocidos < _grafo.Nodos.Count)
+                Debug.LogWarning("[DigitalTwin] Hay nodos del grafo que no corresponden a ningun punto de la " +
+                                 "escena. Suele significar que el modelo se ha reimportado con GlobalId distintos: " +
+                                 "vuelve a generar el grafo.");
         }
 
         private static string BuildDisplayName(IfcMetadata meta)
@@ -241,6 +286,58 @@ namespace DigitalTwin.Navigation
         /// </summary>
         private void RefreshHotspots()
         {
+            var visible = _grafo != null ? SeleccionarPorGrafo() : null;
+            if (visible == null) visible = SeleccionarPorProximidad();
+
+            for (int i = 0; i < _pool.Count; i++)
+            {
+                var slot = _pool[i];
+                if (i < visible.Count)
+                {
+                    slot.Target = visible[i];
+                    slot.Label.text = visible[i].DisplayName;
+                    slot.Root.gameObject.SetActive(true);
+                }
+                else
+                {
+                    slot.Target = null;
+                    slot.Root.gameObject.SetActive(false);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Vecinos del punto actual segun el grafo precalculado. Devuelve null si el grafo no
+        /// cubre este punto, para que quien llama recurra al criterio de proximidad.
+        /// </summary>
+        private List<NavPointData> SeleccionarPorGrafo()
+        {
+            int idx = _grafo.IndiceDe(_current.Meta != null ? _current.Meta.globalId : null);
+            if (idx < 0) return null;
+
+            Vector3 origen = _current.Transform.position;
+            var vecinos = new List<NavPointData>();
+
+            foreach (int v in _grafo.Nodos[idx].Vecinos)
+            {
+                if (v < 0 || v >= _grafo.Nodos.Count) continue;
+                if (_puntosPorGlobalId.TryGetValue(_grafo.Nodos[v].GlobalId, out var punto) && punto != _current)
+                    vecinos.Add(punto);
+            }
+
+            if (vecinos.Count == 0) return null;
+
+            // Se ordenan por cercania para que, si hay mas vecinos que huecos, se ofrezcan los
+            // saltos cortos antes que los largos.
+            vecinos.Sort((a, b) => DistanciaHorizontal(origen, a.Transform.position)
+                                  .CompareTo(DistanciaHorizontal(origen, b.Transform.position)));
+
+            if (vecinos.Count > _pool.Count) vecinos.RemoveRange(_pool.Count, vecinos.Count - _pool.Count);
+            return vecinos;
+        }
+
+        private List<NavPointData> SeleccionarPorProximidad()
+        {
             Vector3 origen = _current.Transform.position;
 
             var candidatos = _points
@@ -302,21 +399,7 @@ namespace DigitalTwin.Navigation
                 visible.Add(c.Punto);
             }
 
-            for (int i = 0; i < _pool.Count; i++)
-            {
-                var slot = _pool[i];
-                if (i < visible.Count)
-                {
-                    slot.Target = visible[i];
-                    slot.Label.text = visible[i].DisplayName;
-                    slot.Root.gameObject.SetActive(true);
-                }
-                else
-                {
-                    slot.Target = null;
-                    slot.Root.gameObject.SetActive(false);
-                }
-            }
+            return visible;
         }
 
         private void PositionActiveHotspots()
