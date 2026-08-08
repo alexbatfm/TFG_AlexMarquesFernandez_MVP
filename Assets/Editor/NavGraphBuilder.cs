@@ -88,24 +88,50 @@ namespace DigitalTwin.EditorTools
         // equivale a rodear dos metros -es lo que haría una persona-, mientras que atravesar un
         // muro equivale a treinta, de modo que solo se elige cuando la alternativa es no tener
         // conexión.
-        private const float PenalizacionPaso = 2f;    // puertas, huecos, ventanas
-        private const float PenalizacionMuro = 30f;   // muros, forjados, pilares
-        private const float PenalizacionOtro = 10f;   // mobiliario y demás
+        private const float PenalizacionPaso = 2f;     // puertas, huecos, escaleras
+        private const float PenalizacionVidrio = 8f;   // ventanas, mamparas, muro cortina
+        private const float PenalizacionMuro = 30f;    // muros, forjados, pilares
+        private const float PenalizacionOtro = 10f;    // mobiliario y demás
 
         /// <summary>
-        /// Tipos IFC que representan un paso practicable: atravesarlos es lo que hace una persona
-        /// al ir de una estancia a otra, no un atajo imposible.
+        /// Incorporar las puertas del modelo como nodos intermedios del grafo. Ver RecogerPuntos
+        /// para el motivo: sin ellas el algoritmo no tiene por dónde rodear y se ve obligado a
+        /// atravesar tabiques.
+        /// </summary>
+        private const bool UsarPuertasComoNodos = true;
+
+        /// <summary>
+        /// Pasos practicables: atravesarlos es lo que hace una persona al ir de una estancia a
+        /// otra, no un atajo imposible.
         /// </summary>
         private static readonly string[] TiposDePaso =
         {
-            "IfcDoor", "IfcOpeningElement", "IfcWindow", "IfcStair", "IfcStairFlight", "IfcRamp"
+            "IfcDoor", "IfcOpeningElement", "IfcStair", "IfcStairFlight", "IfcRamp"
         };
 
-        /// <summary>Elementos que delimitan de verdad el espacio y no deberían atravesarse.</summary>
+        /// <summary>
+        /// Cerramientos transparentes: ventanas, mamparas y muro cortina con sus montantes y
+        /// paneles.
+        ///
+        /// Ocupan un escalón intermedio propio, y no el de los muros, por una razón que tiene que
+        /// ver con la orientación del usuario y no con la geometría: a través del vidrio se ve el
+        /// destino. Un salto que cruza una mampara resulta comprensible -se sabe adónde se va-
+        /// mientras que uno que atraviesa un tabique opaco parece que el sistema falla. Cruzarlos
+        /// no es lo ideal, porque físicamente no se puede, pero es preferible a atravesar fábrica.
+        ///
+        /// Se incluyen IfcMember e IfcPlate porque en este modelo son los montantes y los paneles
+        /// de la fachada acristalada: un rayo que impacta en ellos está, en la práctica, cruzando
+        /// el muro cortina.
+        /// </summary>
+        private static readonly string[] TiposTransparentes =
+        {
+            "IfcWindow", "IfcCurtainWall", "IfcPlate", "IfcMember"
+        };
+
+        /// <summary>Cerramientos opacos: delimitan el espacio y no dejan ver al otro lado.</summary>
         private static readonly string[] TiposDeCerramiento =
         {
-            "IfcWall", "IfcWallStandardCase", "IfcSlab", "IfcRoof", "IfcColumn",
-            "IfcBeam", "IfcCurtainWall", "IfcPlate", "IfcMember"
+            "IfcWall", "IfcWallStandardCase", "IfcSlab", "IfcRoof", "IfcColumn", "IfcBeam"
         };
 
         [MenuItem("Tools/IFC/Generar grafo de navegación")]
@@ -125,18 +151,22 @@ namespace DigitalTwin.EditorTools
             // arrancar. Se anaden temporalmente para poder analizar que atraviesa cada trayecto.
             var collidersTemporales = AsegurarColliders();
             var aristas = new HashSet<(int, int)>();
-            int aristasRNG = 0, añadidasPorConectividad = 0, conMuro = 0, conPaso = 0, limpias = 0;
+            int aristasRNG = 0, añadidasPorConectividad = 0;
+            int conMuro = 0, conVidrio = 0, conPaso = 0, limpias = 0;
             try
             {
-                var coste = CalcularCostes(puntos, out int[,] muros, out int[,] pasos);
+                var coste = CalcularCostes(puntos, out int[,] muros, out int[,] pasos,
+                                           out int[,] vidrios);
 
                 aristas = ConstruirRNG(puntos, coste);
                 aristasRNG = aristas.Count;
                 añadidasPorConectividad = GarantizarConectividad(puntos, aristas, coste);
 
+                // Se clasifica por el obstaculo mas restrictivo que atraviesa cada arista.
                 foreach (var (a, b) in aristas)
                 {
                     if (muros[a, b] > 0) conMuro++;
+                    else if (vidrios[a, b] > 0) conVidrio++;
                     else if (pasos[a, b] > 0) conPaso++;
                     else limpias++;
                 }
@@ -151,11 +181,12 @@ namespace DigitalTwin.EditorTools
 
             Debug.Log($"[NavGraph] Grafo generado: {puntos.Count} nodos, {asset.ContarAristas()} aristas " +
                       $"({aristasRNG} del RNG + {añadidasPorConectividad} para unir componentes aisladas). " +
-                      $"Trayectos sin obstaculos: {limpias}; a traves de puertas o huecos: {conPaso}; " +
-                      $"atravesando cerramientos: {conMuro}. Guardado en {RutaAsset}.");
+                      $"Trayectos sin obstaculos: {limpias}; por puertas o huecos: {conPaso}; " +
+                      $"a traves de vidrio: {conVidrio}; atravesando fabrica: {conMuro}. " +
+                      $"Guardado en {RutaAsset}.");
 
             if (conMuro > 0)
-                Debug.LogWarning($"[NavGraph] {conMuro} aristas atraviesan un cerramiento. Es el ultimo " +
+                Debug.LogWarning($"[NavGraph] {conMuro} aristas atraviesan fabrica opaca. Es el ultimo " +
                                  "recurso del algoritmo: ocurre cuando no hay ninguna alternativa por " +
                                  "puerta. Conviene revisarlas en el asset y comprobar si falta algun punto " +
                                  "de navegacion intermedio que permitiria rodear.");
@@ -169,21 +200,61 @@ namespace DigitalTwin.EditorTools
             public IfcMetadata Meta;
             public Vector3 Pos;
             public string Sala;
+            public bool EsPuerta;
         }
 
+        /// <summary>
+        /// Posición del nodo. Para las puertas se usa el centro de su volumen y no el origen del
+        /// objeto, que en la geometría procedente de Revit suele quedar en una esquina del marco
+        /// y dejaría el nodo incrustado en el tabique.
+        /// </summary>
+        private static Vector3 PosicionDe(IfcMetadata meta)
+        {
+            var r = meta.GetComponentInChildren<Renderer>();
+            return r != null ? r.bounds.center : meta.transform.position;
+        }
+
+        /// <summary>
+        /// Recoge los nodos del grafo: los puntos "Esfera..." del IFC y, además, las puertas.
+        ///
+        /// Por qué las puertas son nodos. Los puntos de navegación del modelo están situados en
+        /// el centro de las estancias, no en los umbrales. Sin un nodo intermedio en la puerta, el
+        /// algoritmo no tiene por dónde rodear: para ir de una sala a la contigua no existe
+        /// ninguna alternativa mejor que la línea recta, que atraviesa el tabique. La penalización
+        /// no sirve de nada, porque se aplica por igual a todos los caminos posibles.
+        ///
+        /// Añadir las puertas como nodos resuelve el problema en su origen y sale prácticamente
+        /// gratis, porque el modelo IFC ya sabe dónde están: son entidades <c>IfcDoor</c> con su
+        /// posición y su identificador global. Es además el punto por el que un operario pasaría
+        /// realmente, de modo que el recorrido resultante se parece más a caminar por el edificio
+        /// que a atravesarlo.
+        ///
+        /// Un umbral es un sitio perfectamente razonable desde el que mirar en un recorrido
+        /// virtual: se ve la sala que se deja y la que se entra.
+        /// </summary>
         private static List<Punto> RecogerPuntos()
         {
             var lista = new List<Punto>();
             foreach (var meta in UnityEngine.Object.FindObjectsByType<IfcMetadata>(FindObjectsSortMode.None))
             {
-                if (meta == null || meta.ifcType != SceneModelIndex.NavPointIfcType) continue;
-                if (string.IsNullOrEmpty(meta.ifcName) || !meta.ifcName.StartsWith(SceneModelIndex.NavPointPrefix)) continue;
+                if (meta == null) continue;
+
+                bool esEsfera = meta.ifcType == SceneModelIndex.NavPointIfcType &&
+                                !string.IsNullOrEmpty(meta.ifcName) &&
+                                meta.ifcName.StartsWith(SceneModelIndex.NavPointPrefix);
+
+                // Solo IfcDoor, no IfcDoorStyle ni IfcDoorType: las definiciones de catálogo no
+                // están colocadas en el edificio.
+                bool esPuerta = UsarPuertasComoNodos && meta.ifcType == "IfcDoor";
+
+                if (!esEsfera && !esPuerta) continue;
 
                 lista.Add(new Punto
                 {
                     Meta = meta,
-                    Pos = meta.transform.position,
-                    Sala = meta.GetValue("Otros", "LOC_Localizacion4")
+                    Pos = PosicionDe(meta),
+                    Sala = meta.GetValue("Otros", "LOC_Localizacion4"),
+                    EsPuerta = esPuerta
                 });
             }
 
@@ -207,9 +278,10 @@ namespace DigitalTwin.EditorTools
         /// atraviese la hoja de las puertas y los muros a media altura en lugar de colarse por
         /// debajo del marco o por encima de un zócalo.
         /// </summary>
-        private static float Coste(Punto a, Punto b, out int pasos, out int muros, out int otros)
+        private static float Coste(Punto a, Punto b, out int pasos, out int vidrios,
+                                   out int muros, out int otros)
         {
-            pasos = 0; muros = 0; otros = 0;
+            pasos = 0; vidrios = 0; muros = 0; otros = 0;
 
             Vector3 origen = a.Pos + Vector3.up * AlturaTrazado;
             Vector3 destino = b.Pos + Vector3.up * AlturaTrazado;
@@ -234,9 +306,10 @@ namespace DigitalTwin.EditorTools
                     if (meta != null && meta.ifcType == SceneModelIndex.NavPointIfcType) continue;
 
                     string tipo = meta != null ? meta.ifcType : null;
-                    if (EsDeTipo(tipo, TiposDePaso))            { pasos++;  penalizacion += PenalizacionPaso; }
-                    else if (EsDeTipo(tipo, TiposDeCerramiento)) { muros++;  penalizacion += PenalizacionMuro; }
-                    else                                         { otros++;  penalizacion += PenalizacionOtro; }
+                    if (EsDeTipo(tipo, TiposDePaso))             { pasos++;   penalizacion += PenalizacionPaso; }
+                    else if (EsDeTipo(tipo, TiposTransparentes)) { vidrios++; penalizacion += PenalizacionVidrio; }
+                    else if (EsDeTipo(tipo, TiposDeCerramiento)) { muros++;   penalizacion += PenalizacionMuro; }
+                    else                                          { otros++;   penalizacion += PenalizacionOtro; }
                 }
             }
 
@@ -352,12 +425,13 @@ namespace DigitalTwin.EditorTools
         /// consultas de fisica son con diferencia lo mas caro del proceso.
         /// </summary>
         private static float[,] CalcularCostes(List<Punto> p, out int[,] murosCruzados,
-                                               out int[,] pasosCruzados)
+                                               out int[,] pasosCruzados, out int[,] vidriosCruzados)
         {
             int n = p.Count;
             var coste = new float[n, n];
             murosCruzados = new int[n, n];
             pasosCruzados = new int[n, n];
+            vidriosCruzados = new int[n, n];
 
             for (int i = 0; i < n; i++)
             {
@@ -366,10 +440,11 @@ namespace DigitalTwin.EditorTools
 
                 for (int j = i + 1; j < n; j++)
                 {
-                    float c = Coste(p[i], p[j], out int pasos, out int muros, out int _);
+                    float c = Coste(p[i], p[j], out int pasos, out int vidrios, out int muros, out int _);
                     coste[i, j] = coste[j, i] = c;
                     murosCruzados[i, j] = murosCruzados[j, i] = muros;
                     pasosCruzados[i, j] = pasosCruzados[j, i] = pasos;
+                    vidriosCruzados[i, j] = vidriosCruzados[j, i] = vidrios;
                 }
             }
 
@@ -461,8 +536,9 @@ namespace DigitalTwin.EditorTools
             asset.EscenaOrigen = UnityEngine.SceneManagement.SceneManager.GetActiveScene().name;
             asset.Parametros = $"RNG sobre coste; tolerancia vertical {ToleranciaVertical} m; " +
                                $"longitud máxima {LongitudMaximaArista} m; penalizaciones: " +
-                               $"paso {PenalizacionPaso} m, cerramiento {PenalizacionMuro} m, " +
-                               $"otros {PenalizacionOtro} m";
+                               $"paso {PenalizacionPaso} m, vidrio {PenalizacionVidrio} m, " +
+                               $"fabrica {PenalizacionMuro} m, otros {PenalizacionOtro} m; " +
+                               $"puertas como nodos: {UsarPuertasComoNodos}";
 
             if (esNuevo) AssetDatabase.CreateAsset(asset, RutaAsset);
             else EditorUtility.SetDirty(asset);

@@ -31,6 +31,19 @@ namespace DigitalTwin.Navigation
             public string DisplayName;
             /// <summary>Sala a la que pertenece (pset Otros/LOC_Localizacion4), para garantizar salida.</summary>
             public string Sala;
+
+            /// <summary>
+            /// Posición a la que viaja la cámara, si difiere del origen del objeto.
+            ///
+            /// Los puntos "Esfera..." están colocados directamente a la altura de la vista, así
+            /// que para ellos basta el origen. Los nodos de puerta, en cambio, toman su posición
+            /// del centro del volumen de la hoja: el origen de una puerta procedente de Revit
+            /// suele caer en una esquina del marco, y usarlo dejaría la cámara incrustada en el
+            /// tabique.
+            /// </summary>
+            public Vector3? PosicionFija;
+
+            public Vector3 Pos => PosicionFija ?? Transform.position;
         }
 
         private class HotspotSlot
@@ -129,6 +142,7 @@ namespace DigitalTwin.Navigation
                     _puntosPorGlobalId[p.Meta.globalId] = p;
 
             CargarGrafo();
+            IncorporarNodosDelGrafoQueNoSonEsferas(index);
             BuildUI();
 
             if (_points.Count == 0)
@@ -138,7 +152,7 @@ namespace DigitalTwin.Navigation
             }
 
             _current = FindNearest(_camera.transform.position, null);
-            _camera.transform.position = _current.Transform.position;
+            _camera.transform.position = _current.Pos;
             GetComponent<TourCameraLook>()?.SyncFromTransform();
 
             RefreshHotspots();
@@ -175,9 +189,64 @@ namespace DigitalTwin.Navigation
                                  "vuelve a generar el grafo.");
         }
 
+        /// <summary>
+        /// Da de alta como destinos los nodos del grafo que no son puntos "Esfera...".
+        ///
+        /// El generador del grafo incorpora las puertas del modelo como nodos intermedios, porque
+        /// sin ellas no hay por dónde rodear y los enlaces acaban atravesando tabiques. Esos nodos
+        /// existen en la escena -son elementos IFC con sus metadatos- pero no estaban en la lista
+        /// de puntos de navegación, así que sin este paso el recorrido los descartaría y se
+        /// perdería justo la conectividad que se pretendía ganar.
+        ///
+        /// La posición se toma del centro del volumen y no del origen del objeto: el origen de
+        /// una puerta procedente de Revit suele caer en una esquina del marco, y usarlo dejaría la
+        /// cámara incrustada en el tabique.
+        /// </summary>
+        private void IncorporarNodosDelGrafoQueNoSonEsferas(SceneModelIndex index)
+        {
+            if (_grafo == null) return;
+
+            var porGlobalId = new Dictionary<string, IfcMetadata>();
+            foreach (var meta in index.AllElements)
+                if (meta != null && !string.IsNullOrEmpty(meta.globalId))
+                    porGlobalId[meta.globalId] = meta;
+
+            int añadidos = 0;
+            foreach (var nodo in _grafo.Nodos)
+            {
+                if (string.IsNullOrEmpty(nodo.GlobalId)) continue;
+                if (_puntosPorGlobalId.ContainsKey(nodo.GlobalId)) continue;
+                if (!porGlobalId.TryGetValue(nodo.GlobalId, out var meta)) continue;
+
+                var renderer = meta.GetComponentInChildren<Renderer>();
+                var punto = new NavPointData
+                {
+                    Meta = meta,
+                    Transform = meta.transform,
+                    DisplayName = BuildDisplayName(meta),
+                    Sala = meta.GetValue("Otros", "LOC_Localizacion4"),
+                    PosicionFija = renderer != null ? renderer.bounds.center : (Vector3?)null
+                };
+
+                _points.Add(punto);
+                _puntosPorGlobalId[nodo.GlobalId] = punto;
+                añadidos++;
+            }
+
+            if (añadidos > 0)
+                Debug.Log($"[DigitalTwin] {añadidos} nodos del grafo incorporados al recorrido " +
+                          "además de los puntos 'Esfera...' (puertas y pasos del modelo).");
+        }
+
         private static string BuildDisplayName(IfcMetadata meta)
         {
             string room = meta.GetValue("Otros", "LOC_Localizacion4");
+
+            // Las puertas se etiquetan como tales: en un umbral, "Puerta · Comedor" orienta mucho
+            // mejor que el nombre de la sala a secas, que haría pensar que ya se está dentro.
+            if (meta.ifcType == "IfcDoor")
+                return string.IsNullOrEmpty(room) ? "Puerta" : $"Puerta · {room}";
+
             if (!string.IsNullOrEmpty(room)) return room;
             return string.IsNullOrEmpty(meta.ifcTag) ? meta.ifcName : $"Punto {meta.ifcTag}";
         }
@@ -189,7 +258,7 @@ namespace DigitalTwin.Navigation
             foreach (var p in _points)
             {
                 if (p == exclude) continue;
-                float d = Vector3.Distance(fromPosition, p.Transform.position);
+                float d = Vector3.Distance(fromPosition, p.Pos);
                 if (d < bestDist) { bestDist = d; best = p; }
             }
             return best;
@@ -315,7 +384,7 @@ namespace DigitalTwin.Navigation
             int idx = _grafo.IndiceDe(_current.Meta != null ? _current.Meta.globalId : null);
             if (idx < 0) return null;
 
-            Vector3 origen = _current.Transform.position;
+            Vector3 origen = _current.Pos;
             var vecinos = new List<NavPointData>();
 
             foreach (int v in _grafo.Nodos[idx].Vecinos)
@@ -329,8 +398,8 @@ namespace DigitalTwin.Navigation
 
             // Se ordenan por cercania para que, si hay mas vecinos que huecos, se ofrezcan los
             // saltos cortos antes que los largos.
-            vecinos.Sort((a, b) => DistanciaHorizontal(origen, a.Transform.position)
-                                  .CompareTo(DistanciaHorizontal(origen, b.Transform.position)));
+            vecinos.Sort((a, b) => DistanciaHorizontal(origen, a.Pos)
+                                  .CompareTo(DistanciaHorizontal(origen, b.Pos)));
 
             if (vecinos.Count > _pool.Count) vecinos.RemoveRange(_pool.Count, vecinos.Count - _pool.Count);
             return vecinos;
@@ -338,15 +407,15 @@ namespace DigitalTwin.Navigation
 
         private List<NavPointData> SeleccionarPorProximidad()
         {
-            Vector3 origen = _current.Transform.position;
+            Vector3 origen = _current.Pos;
 
             var candidatos = _points
                 .Where(p => p != _current)
                 .Select(p => new
                 {
                     Punto = p,
-                    Dist = DistanciaHorizontal(origen, p.Transform.position),
-                    Desnivel = Mathf.Abs(p.Transform.position.y - origen.y)
+                    Dist = DistanciaHorizontal(origen, p.Pos),
+                    Desnivel = Mathf.Abs(p.Pos.y - origen.y)
                 })
                 .Where(c => c.Desnivel <= ToleranciaVertical)
                 .OrderBy(c => c.Dist)
@@ -361,8 +430,8 @@ namespace DigitalTwin.Navigation
                     .Select(p => new
                     {
                         Punto = p,
-                        Dist = DistanciaHorizontal(origen, p.Transform.position),
-                        Desnivel = Mathf.Abs(p.Transform.position.y - origen.y)
+                        Dist = DistanciaHorizontal(origen, p.Pos),
+                        Desnivel = Mathf.Abs(p.Pos.y - origen.y)
                     })
                     .OrderBy(c => c.Dist)
                     .ToList();
@@ -408,7 +477,7 @@ namespace DigitalTwin.Navigation
             {
                 if (!slot.Root.gameObject.activeSelf || slot.Target == null) continue;
 
-                Vector3 world = slot.Target.Transform.position;
+                Vector3 world = slot.Target.Pos;
                 Vector3 screen = _camera.WorldToScreenPoint(world);
 
                 if (screen.z <= 0f)
@@ -419,7 +488,7 @@ namespace DigitalTwin.Navigation
 
                 slot.Root.position = screen;
 
-                float dist = Vector3.Distance(_current.Transform.position, world);
+                float dist = Vector3.Distance(_current.Pos, world);
                 float scale = Mathf.Clamp(1.3f - dist / (MaxHotspotDistance * 1.5f), 0.55f, 1.15f);
                 slot.Root.localScale = Vector3.one * scale;
             }
@@ -437,7 +506,7 @@ namespace DigitalTwin.Navigation
 
             Vector3 startPos = _camera.transform.position;
             Quaternion startRot = _camera.transform.rotation;
-            Vector3 endPos = target.Transform.position;
+            Vector3 endPos = target.Pos;
 
             Vector3 flatDir = Vector3.ProjectOnPlane(endPos - startPos, Vector3.up);
             Quaternion travelLookRot = flatDir.sqrMagnitude > 0.0001f
@@ -477,14 +546,14 @@ namespace DigitalTwin.Navigation
         private bool DemasiadoAlineadoConAlguno(Vector3 origen, NavPointData candidato,
                                                 List<NavPointData> yaElegidos)
         {
-            Vector3 dirCand = candidato.Transform.position - origen;
+            Vector3 dirCand = candidato.Pos - origen;
             dirCand.y = 0f;
             if (dirCand.sqrMagnitude < 0.0001f) return false;
             dirCand.Normalize();
 
             foreach (var otro in yaElegidos)
             {
-                Vector3 dirOtro = otro.Transform.position - origen;
+                Vector3 dirOtro = otro.Pos - origen;
                 dirOtro.y = 0f;
                 if (dirOtro.sqrMagnitude < 0.0001f) continue;
                 dirOtro.Normalize();
