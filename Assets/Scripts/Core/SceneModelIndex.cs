@@ -40,7 +40,31 @@ namespace DigitalTwin.Core
         /// </summary>
         public readonly List<IfcMetadata> Spaces = new List<IfcMetadata>();
 
+        /// <summary>
+        /// Definiciones de tipo del catálogo IFC (IfcWallType, IfcFurnitureType, IfcMemberType,
+        /// IfcTypeProduct...). Describen "un tipo de silla" o "un tipo de muro", no una silla ni
+        /// un muro concretos colocados en el edificio.
+        ///
+        /// No deberían dibujarse, pero al exportar a glTF se materializan como mallas reales en
+        /// posiciones arbitrarias —normalmente el origen o la posición de la primera instancia—,
+        /// lo que produce el efecto de mobiliario y tabiques flotando y atravesando paredes.
+        /// Es un artefacto de la exportación, no un problema del modelo.
+        ///
+        /// Se detectan por convención de nomenclatura del propio estándar: en IFC toda entidad de
+        /// definición de tipo termina en "Type" (más <c>IfcTypeProduct</c>, que es la raíz
+        /// abstracta de todas ellas). Es un criterio del estándar, no una heurística sobre los
+        /// nombres que haya puesto quien modeló el edificio.
+        /// </summary>
+        public readonly List<IfcMetadata> TypeDefinitions = new List<IfcMetadata>();
+
         public readonly List<IfcMetadata> AllElements = new List<IfcMetadata>();
+
+        /// <summary>¿Es una definición de tipo del catálogo IFC y no un elemento colocado?</summary>
+        public static bool EsDefinicionDeTipo(string ifcType)
+        {
+            if (string.IsNullOrEmpty(ifcType)) return false;
+            return ifcType.EndsWith("Type") || ifcType == "IfcTypeProduct";
+        }
 
         public static SceneModelIndex Build()
         {
@@ -59,23 +83,23 @@ namespace DigitalTwin.Core
                 {
                     index.Sensors.Add(meta);
                 }
-                else if (!string.IsNullOrEmpty(meta.ifcType) && meta.ifcType.StartsWith(SpaceIfcType))
+                else if (meta.ifcType == SpaceIfcType)
                 {
-                    // Se aceptan tanto IfcSpace como IfcSpaceType. Con los sensores se excluían
-                    // a propósito las definiciones de tipo ("...Type"), porque allí interesaba
-                    // quedarse solo con las instancias reales que tienen fila en periscoopedb.
-                    // Aquí el objetivo es el contrario: que no se dibuje nada que represente un
-                    // volumen de sala, y en este modelo las definiciones de tipo también llegan
-                    // con geometría (de las 550 entradas del metadata.json, 119 son definiciones
-                    // de tipo y aun así 533 acaban teniendo GameObject en la escena). Si solo se
-                    // filtrara IfcSpace quedarían visibles las 31 cajas de IfcSpaceType.
                     index.Spaces.Add(meta);
+                }
+
+                // Fuera de la cadena if/else anterior: una definición de tipo puede ser además
+                // de espacio (IfcSpaceType), y en ese caso debe entrar en las dos listas.
+                if (EsDefinicionDeTipo(meta.ifcType))
+                {
+                    index.TypeDefinitions.Add(meta);
                 }
             }
 
             Debug.Log($"[DigitalTwin] SceneModelIndex: {index.AllElements.Count} elementos con metadatos, " +
                       $"{index.NavPoints.Count} puntos de navegación (Esfera...), {index.Sensors.Count} sensores IoT (EQE...), " +
-                      $"{index.Spaces.Count} volúmenes de espacio (IfcSpace).");
+                      $"{index.Spaces.Count} volúmenes de espacio (IfcSpace), " +
+                      $"{index.TypeDefinitions.Count} definiciones de tipo del catálogo IFC.");
 
             if (index.NavPoints.Count == 0)
                 Debug.LogWarning("[DigitalTwin] No se ha encontrado ningún punto de navegación 'Esfera...'. " +

@@ -36,10 +36,10 @@ namespace DigitalTwin.Core
             // Objetos que forman parte de un volumen de espacio (IfcSpace). Se excluyen tanto de
             // los colliders como del render; ver OcultarEspacios más abajo para el motivo.
             var deEspacios = new HashSet<GameObject>();
-            foreach (var espacio in index.Spaces)
+            foreach (var meta in Ocultables(index))
             {
-                if (espacio == null) continue;
-                foreach (var t in espacio.GetComponentsInChildren<Transform>(true))
+                if (meta == null) continue;
+                foreach (var t in meta.GetComponentsInChildren<Transform>(true))
                     deEspacios.Add(t.gameObject);
             }
 
@@ -61,7 +61,8 @@ namespace DigitalTwin.Core
             }
 
             Debug.Log($"[DigitalTwin] ColliderBootstrapper: {added} MeshCollider añadidos, {skipped} objetos ya tenían " +
-                      $"collider, {espacios} omitidos por pertenecer a un volumen de espacio.");
+                      $"collider, {espacios} omitidos por ser geometría no representable " +
+                      $"(volúmenes de espacio y definiciones de tipo).");
 
             OcultarEspacios(index);
 
@@ -70,6 +71,17 @@ namespace DigitalTwin.Core
                 foreach (var meta in index.NavPoints)
                     meta.gameObject.layer = NavPointLayer;
             }
+        }
+
+        /// <summary>
+        /// Elementos cuya geometría no debe dibujarse ni participar en la física: volúmenes de
+        /// espacio y definiciones de tipo del catálogo. Se recorren juntos porque el tratamiento
+        /// es el mismo, aunque el motivo de cada uno sea distinto (ver SceneModelIndex).
+        /// </summary>
+        private static IEnumerable<IfcMetadata> Ocultables(SceneModelIndex index)
+        {
+            foreach (var m in index.Spaces) yield return m;
+            foreach (var m in index.TypeDefinitions) yield return m;
         }
 
         /// <summary>
@@ -98,20 +110,25 @@ namespace DigitalTwin.Core
         private static void OcultarEspacios(SceneModelIndex index)
         {
             int ocultados = 0;
-            foreach (var espacio in index.Spaces)
+            var yaVistos = new HashSet<Renderer>();
+
+            foreach (var meta in Ocultables(index))
             {
-                if (espacio == null) continue;
-                foreach (var r in espacio.GetComponentsInChildren<Renderer>(true))
+                if (meta == null) continue;
+                foreach (var r in meta.GetComponentsInChildren<Renderer>(true))
                 {
-                    if (r == null) continue;
+                    // Un IfcSpaceType está en las dos listas; sin esta guarda se contaría doble.
+                    if (r == null || !yaVistos.Add(r)) continue;
                     r.enabled = false;
                     ocultados++;
                 }
             }
 
             if (ocultados > 0)
-                Debug.Log($"[DigitalTwin] {ocultados} mallas de volúmenes de espacio (IfcSpace) ocultadas; " +
-                          $"sus metadatos siguen disponibles para la relación sensor-sala.");
+                Debug.Log($"[DigitalTwin] {ocultados} mallas ocultadas por no representar geometría real " +
+                          $"del edificio ({index.Spaces.Count} volúmenes de espacio y " +
+                          $"{index.TypeDefinitions.Count} definiciones de tipo). Sus metadatos siguen " +
+                          $"disponibles: los de IfcSpace sostienen la relación sensor-sala.");
         }
 
         /// <summary>Máscara de física para raycasts/linecasts de oclusión: todo menos los puntos de navegación.</summary>
