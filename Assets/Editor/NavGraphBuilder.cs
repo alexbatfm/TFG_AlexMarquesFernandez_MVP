@@ -283,8 +283,8 @@ namespace DigitalTwin.EditorTools
         {
             pasos = 0; vidrios = 0; muros = 0; otros = 0;
 
-            Vector3 origen = a.Pos + Vector3.up * AlturaTrazado;
-            Vector3 destino = b.Pos + Vector3.up * AlturaTrazado;
+            Vector3 origen = a.Pos;
+            Vector3 destino = b.Pos;
             Vector3 dir = destino - origen;
             float longitud = dir.magnitude;
 
@@ -324,8 +324,22 @@ namespace DigitalTwin.EditorTools
             return false;
         }
 
-        /// <summary>Altura sobre el punto a la que se traza el rayo, en metros.</summary>
-        private const float AlturaTrazado = 1.2f;
+        // Nota sobre la altura del trazado, que costo un diagnostico erroneo:
+        //
+        // El rayo se traza directamente entre las posiciones de los nodos, sin sumarles ninguna
+        // altura. Una version anterior anadia 1,2 m "para que el rayo atravesara la hoja de las
+        // puertas en lugar de colarse bajo el marco", razonamiento que era correcto en abstracto
+        // pero partia de una premisa falsa: que los nodos estuvieran a ras de suelo.
+        //
+        // No lo estan. Los puntos "Esfera..." del modelo ya vienen a 1,55 m, la altura de la
+        // vista, y los nodos de puerta se situan en el centro del volumen de la hoja, en torno a
+        // 1,05 m. Sumarles 1,2 m elevaba el trazado a 2,75 m y 2,29 m respectivamente; como una
+        // puerta mide unos 2,1 m, el rayo pasaba POR ENCIMA DEL DINTEL y atravesaba el macizo del
+        // muro. El resultado era que ninguna puerta llegaba a contabilizarse como paso y todas
+        // las aristas entre estancias contiguas aparecian como atravesando fabrica.
+        //
+        // Entre 1,05 y 1,55 m el rayo discurre por el centro del hueco de paso, que es justo
+        // donde debe ir.
 
         /// <summary>
         /// Los volúmenes de colisión los añade <c>ColliderBootstrapper</c> al arrancar el juego,
