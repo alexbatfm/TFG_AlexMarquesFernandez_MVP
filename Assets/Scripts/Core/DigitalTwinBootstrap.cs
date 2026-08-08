@@ -46,6 +46,12 @@ namespace DigitalTwin.Core
             camGo.AddComponent<TourCameraLook>();
             tour.Initialize(index, canvas);
 
+            // Menú de acceso directo a zonas. Se engancha al gestor del tour, que es quien
+            // conoce las salas del modelo y sabe viajar a ellas.
+            var menuGo = new GameObject("~MenuZonas");
+            Object.DontDestroyOnLoad(menuGo);
+            menuGo.AddComponent<Navigation.RoomMenuController>().Initialize(tour, canvas);
+
             var panelGo = new GameObject("~MetadataPanel");
             Object.DontDestroyOnLoad(panelGo);
             var panel = panelGo.AddComponent<MetadataPanelController>();

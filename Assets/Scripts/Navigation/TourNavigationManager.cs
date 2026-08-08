@@ -93,6 +93,29 @@ namespace DigitalTwin.Navigation
 
         public bool IsTransitioning { get; private set; }
 
+        [Header("Salto directo entre zonas")]
+        [Tooltip("A partir de esta distancia en metros, el salto desde el menú de zonas se " +
+                 "resuelve de forma instantánea en vez de con desplazamiento continuo.")]
+        public float DistanciaSaltoInstantaneo = 12f;
+
+        /// <summary>Punto representativo de cada sala, en el orden en que se ofrece al usuario.</summary>
+        private readonly List<(string Sala, NavPointData Punto)> _orbesPrincipales =
+            new List<(string, NavPointData)>();
+
+        /// <summary>Salas disponibles para el menú de acceso directo.</summary>
+        public IReadOnlyList<string> Salas
+        {
+            get
+            {
+                var nombres = new List<string>(_orbesPrincipales.Count);
+                foreach (var o in _orbesPrincipales) nombres.Add(o.Sala);
+                return nombres;
+            }
+        }
+
+        /// <summary>Sala en la que se encuentra el punto actual, o cadena vacía si no consta.</summary>
+        public string SalaActual => _current != null ? (_current.Sala ?? string.Empty) : string.Empty;
+
         private readonly List<NavPointData> _points = new List<NavPointData>();
         private NavPointData _current;
         private Camera _camera;
@@ -145,6 +168,7 @@ namespace DigitalTwin.Navigation
 
             CargarGrafo();
             IncorporarNodosDelGrafoQueNoSonEsferas(index);
+            CalcularOrbesPrincipales();
             BuildUI();
 
             if (_points.Count == 0)
@@ -238,6 +262,76 @@ namespace DigitalTwin.Navigation
             if (añadidos > 0)
                 Debug.Log($"[DigitalTwin] {añadidos} nodos del grafo incorporados al recorrido " +
                           "además de los puntos 'Esfera...' (puertas y pasos del modelo).");
+        }
+
+        /// <summary>
+        /// Elige un punto representativo por sala: el más próximo al centro geométrico de los
+        /// puntos de esa sala.
+        ///
+        /// Se prefiere el más céntrico al primero de la lista porque es el que ofrece una vista
+        /// más representativa del espacio al llegar. En una sala alargada, aterrizar en un
+        /// extremo obliga al usuario a girarse para entender dónde está.
+        ///
+        /// Solo se consideran los puntos "Esfera..." del modelo. Los nodos de puerta, aunque
+        /// tengan sala asignada, están en el umbral y no representan la estancia; además
+        /// duplicarían entradas del menú.
+        /// </summary>
+        private void CalcularOrbesPrincipales()
+        {
+            var porSala = new Dictionary<string, List<NavPointData>>();
+
+            foreach (var p in _points)
+            {
+                if (p.Meta == null || p.Meta.ifcType != SceneModelIndex.NavPointIfcType) continue;
+                if (string.IsNullOrEmpty(p.Sala)) continue;
+
+                if (!porSala.TryGetValue(p.Sala, out var lista))
+                    porSala[p.Sala] = lista = new List<NavPointData>();
+                lista.Add(p);
+            }
+
+            _orbesPrincipales.Clear();
+            foreach (var par in porSala)
+            {
+                Vector3 centro = Vector3.zero;
+                foreach (var p in par.Value) centro += p.Pos;
+                centro /= par.Value.Count;
+
+                NavPointData mejor = null;
+                float mejorDist = float.MaxValue;
+                foreach (var p in par.Value)
+                {
+                    float d = Vector3.Distance(p.Pos, centro);
+                    if (d < mejorDist) { mejorDist = d; mejor = p; }
+                }
+
+                if (mejor != null) _orbesPrincipales.Add((par.Key, mejor));
+            }
+
+            // Orden alfabético estable: el usuario busca una sala por su nombre, no por su
+            // posición en el edificio.
+            _orbesPrincipales.Sort((a, b) => string.Compare(a.Sala, b.Sala, System.StringComparison.CurrentCulture));
+
+            Debug.Log($"[DigitalTwin] Menú de zonas: {_orbesPrincipales.Count} salas con punto representativo.");
+        }
+
+        /// <summary>
+        /// Lleva la cámara al punto representativo de la sala indicada. Devuelve false si la sala
+        /// no existe o si ya se está en ella.
+        /// </summary>
+        public bool ViajarASala(string sala)
+        {
+            if (IsTransitioning || string.IsNullOrEmpty(sala)) return false;
+
+            foreach (var (nombre, punto) in _orbesPrincipales)
+            {
+                if (nombre != sala) continue;
+                if (punto == _current) return false;
+
+                TravelTo(punto);
+                return true;
+            }
+            return false;
         }
 
         private static string BuildDisplayName(IfcMetadata meta)
@@ -505,6 +599,23 @@ namespace DigitalTwin.Navigation
         private IEnumerator TransitionRoutine(NavPointData target)
         {
             IsTransitioning = true;
+
+            // Salto largo: se resuelve de forma instantánea en vez de con desplazamiento continuo.
+            //
+            // El desplazamiento interpolado tiene sentido entre puntos cercanos, porque conserva
+            // la orientación espacial del operario dentro del edificio. En un salto de decenas de
+            // metros deja de tenerlo: la cámara atraviesa varias estancias y tabiques a velocidad
+            // constante, lo que desorienta más que un corte y además obliga a esperar. Es la misma
+            // razón por la que los recorridos fotográficos cortan entre panorámicas lejanas.
+            if (Vector3.Distance(_camera.transform.position, target.Pos) > DistanciaSaltoInstantaneo)
+            {
+                _camera.transform.position = target.Pos;
+                _current = target;
+                IsTransitioning = false;
+                GetComponent<TourCameraLook>()?.SyncFromTransform();
+                RefreshHotspots();
+                yield break;
+            }
 
             Vector3 startPos = _camera.transform.position;
             Quaternion startRot = _camera.transform.rotation;
