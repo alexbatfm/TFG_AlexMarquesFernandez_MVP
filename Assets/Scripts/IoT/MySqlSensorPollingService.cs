@@ -71,6 +71,7 @@ namespace DigitalTwin.IoT
         private void Start()
         {
             _running = true;
+            Debug.Log($"[DigitalTwin][IoT] Iniciando sondeo contra {Host}:{Port}/{Database} cada {PollIntervalSeconds}s...");
             _ = PollLoopAsync();
         }
 
@@ -79,12 +80,39 @@ namespace DigitalTwin.IoT
             _running = false;
         }
 
+        /// <summary>
+        /// Bucle de sondeo.
+        ///
+        /// El try/catch que envuelve todo el bucle no es defensivo por costumbre, corrige un fallo
+        /// real: como el bucle se lanza en modo "dispara y olvida" (<c>_ = PollLoopAsync()</c>),
+        /// nadie observa la tarea resultante. Cualquier excepción que escapara de aquí se perdía
+        /// sin dejar ni una línea en consola, y el middleware quedaba muerto en silencio, con el
+        /// panel mostrando "esperando primera lectura" para siempre.
+        ///
+        /// El caso concreto que se escapaba: <see cref="PollOnceAsync"/> sí tiene su propio
+        /// try/catch, pero solo cubre lo que ocurre DENTRO del método. Si el ensamblado de
+        /// MySqlConnector no se carga (DLL ausente, arquitectura incompatible, o no marcado para
+        /// la plataforma activa), el fallo se produce al resolver los tipos en el momento de
+        /// invocar el método, es decir antes de entrar en su try, y por tanto lo atravesaba.
+        /// </summary>
         private async Task PollLoopAsync()
         {
-            while (_running)
+            try
             {
-                await PollOnceAsync();
-                await Task.Delay(TimeSpan.FromSeconds(Mathf.Max(1f, PollIntervalSeconds)));
+                while (_running)
+                {
+                    await PollOnceAsync();
+                    await Task.Delay(TimeSpan.FromSeconds(Mathf.Max(1f, PollIntervalSeconds)));
+                }
+            }
+            catch (Exception ex)
+            {
+                IsConnected = false;
+                LastError = ex.Message;
+                Debug.LogError($"[DigitalTwin][IoT] El bucle de sondeo se ha detenido por un error no " +
+                               $"recuperable: {ex.GetType().Name}: {ex.Message}\n" +
+                               "Si menciona MySqlConnector, revisa que Assets/Plugins/MySqlConnector/ contenga " +
+                               "el DLL y que en su importador esté marcada la plataforma activa.\n" + ex.StackTrace);
             }
         }
 

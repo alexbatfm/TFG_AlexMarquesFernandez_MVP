@@ -59,10 +59,16 @@ namespace DigitalTwin.Core
                 {
                     index.Sensors.Add(meta);
                 }
-                else if (meta.ifcType == SpaceIfcType)
+                else if (!string.IsNullOrEmpty(meta.ifcType) && meta.ifcType.StartsWith(SpaceIfcType))
                 {
-                    // Solo IfcSpace, no IfcSpaceType: igual que con los sensores, los "...Type"
-                    // son definiciones de catálogo sin geometría colocada en el edificio.
+                    // Se aceptan tanto IfcSpace como IfcSpaceType. Con los sensores se excluían
+                    // a propósito las definiciones de tipo ("...Type"), porque allí interesaba
+                    // quedarse solo con las instancias reales que tienen fila en periscoopedb.
+                    // Aquí el objetivo es el contrario: que no se dibuje nada que represente un
+                    // volumen de sala, y en este modelo las definiciones de tipo también llegan
+                    // con geometría (de las 550 entradas del metadata.json, 119 son definiciones
+                    // de tipo y aun así 533 acaban teniendo GameObject en la escena). Si solo se
+                    // filtrara IfcSpace quedarían visibles las 31 cajas de IfcSpaceType.
                     index.Spaces.Add(meta);
                 }
             }
