@@ -22,9 +22,24 @@ namespace DigitalTwin.Core
         public const string NavPointPrefix = "Esfera";
         public const string SensorIfcType = "IfcBuildingElementProxy";
         public const string SensorPrefix = "EQE";
+        public const string SpaceIfcType = "IfcSpace";
 
         public readonly List<IfcMetadata> NavPoints = new List<IfcMetadata>();
         public readonly List<IfcMetadata> Sensors = new List<IfcMetadata>();
+
+        /// <summary>
+        /// Volúmenes de espacio (IfcSpace): las salas del edificio representadas como cuerpos
+        /// que ocupan toda la habitación. En un visor BIM están ocultos por defecto porque no
+        /// son elementos construidos, sino zonas conceptuales; al exportar a glTF se convierten
+        /// en mallas normales y aparecen como cajas opacas que tapan el edificio.
+        ///
+        /// No se descartan del modelo aunque no se dibujen, porque llevan información que el
+        /// sistema usa: la tabla `sensor_rooms` de periscoopedb referencia estos mismos GlobalId
+        /// en su columna `ifc_space_global_id`, y son el vínculo entre un sensor y la sala en la
+        /// que está. Borrarlos en el pipeline de Blender rompería esa relación.
+        /// </summary>
+        public readonly List<IfcMetadata> Spaces = new List<IfcMetadata>();
+
         public readonly List<IfcMetadata> AllElements = new List<IfcMetadata>();
 
         public static SceneModelIndex Build()
@@ -44,10 +59,17 @@ namespace DigitalTwin.Core
                 {
                     index.Sensors.Add(meta);
                 }
+                else if (meta.ifcType == SpaceIfcType)
+                {
+                    // Solo IfcSpace, no IfcSpaceType: igual que con los sensores, los "...Type"
+                    // son definiciones de catálogo sin geometría colocada en el edificio.
+                    index.Spaces.Add(meta);
+                }
             }
 
             Debug.Log($"[DigitalTwin] SceneModelIndex: {index.AllElements.Count} elementos con metadatos, " +
-                      $"{index.NavPoints.Count} puntos de navegación (Esfera...), {index.Sensors.Count} sensores IoT (EQE...).");
+                      $"{index.NavPoints.Count} puntos de navegación (Esfera...), {index.Sensors.Count} sensores IoT (EQE...), " +
+                      $"{index.Spaces.Count} volúmenes de espacio (IfcSpace).");
 
             if (index.NavPoints.Count == 0)
                 Debug.LogWarning("[DigitalTwin] No se ha encontrado ningún punto de navegación 'Esfera...'. " +
