@@ -25,10 +25,21 @@ namespace DigitalTwin.EditorTools
     ///    casi en la misma dirección, se solapan en pantalla y provocan clics no deseados. Además
     ///    no garantiza que todas las zonas queden conectadas.
     ///
-    /// LA SOLUCIÓN: GRAFO DE VECINDAD RELATIVA (RNG)
-    /// Se conectan dos puntos A y B solo si no existe un tercer punto C que esté más cerca de
-    /// ambos que la distancia que separa A de B. Formalmente, si no hay ningún C tal que
-    /// max(d(A,C), d(B,C)) &lt; d(A,B).
+    /// LA SOLUCIÓN: GRAFO DE VECINDAD RELATIVA (RNG) SOBRE UN COSTE, NO SOBRE LA DISTANCIA
+    /// Se conectan dos puntos A y B solo si no existe un tercer punto C al que llegar sea más
+    /// barato desde ambos extremos que unirlos directamente. Formalmente, si no hay ningún C tal
+    /// que max(c(A,C), c(B,C)) &lt; c(A,B).
+    ///
+    /// La clave está en qué se mide como coste. No es la distancia pura, sino la distancia más
+    /// una penalización por lo que el trayecto atraviesa: nada, un paso practicable (puerta,
+    /// hueco, escalera) o un cerramiento (muro, forjado, pilar). Así el algoritmo prefiere,
+    /// por este orden, el camino despejado, el que cruza por donde cruzaría una persona, y solo
+    /// como último recurso el que atraviesa un muro.
+    ///
+    /// Integrar la preferencia en la métrica, en lugar de añadir reglas aparte, hace que se
+    /// propague por sí sola a toda la estructura: dos puntos separados por un tabique dejan de
+    /// conectarse en cuanto existe un tercero que los comunica rodeando por la puerta, porque
+    /// esa es justamente la condición que evalúa el algoritmo.
     ///
     /// La consecuencia práctica es justo lo que se busca: en una fila de puntos alineados, cada
     /// uno queda unido únicamente a sus vecinos inmediatos, porque para cualquier par no
@@ -42,6 +53,10 @@ namespace DigitalTwin.EditorTools
     ///
     /// Las distancias se miden en horizontal (ignorando la altura) y solo se consideran pares con
     /// un desnivel pequeño, para que el grafo no salte de planta.
+    ///
+    /// El análisis de obstáculos exige volúmenes de colisión, que en modo edición no existen
+    /// porque los añade ColliderBootstrapper al arrancar. La herramienta los crea de forma
+    /// temporal y los retira al terminar, dejando la escena como estaba.
     /// </summary>
     public static class NavGraphBuilder
     {
@@ -56,6 +71,43 @@ namespace DigitalTwin.EditorTools
         // (por ejemplo, un punto suelto en un extremo del edificio). 0 = sin límite.
         private const float LongitudMaximaArista = 25f;
 
+        // --- Penalizaciones por atravesar geometría -----------------------------------------
+        //
+        // El grafo no se limita a evitar los obstáculos: los convierte en coste. En lugar de
+        // descartar toda arista que cruce algo -que fue el primer criterio del proyecto y dejaba
+        // zonas incomunicadas- se mide qué atraviesa cada trayecto y se le suma una penalización
+        // expresada en metros equivalentes.
+        //
+        // Así, entre dos formas de llegar al mismo sitio el algoritmo prefiere la que no cruza
+        // nada; si no hay, la que cruza una puerta o un hueco de paso; y solo si no queda
+        // alternativa, la que atraviesa un muro. Al integrarse en la misma métrica que usa el
+        // grafo de vecindad relativa, esa preferencia se propaga a toda la estructura sin
+        // necesidad de reglas especiales.
+        //
+        // Las cifras están en metros y son deliberadamente asimétricas: cruzar una puerta
+        // equivale a rodear dos metros -es lo que haría una persona-, mientras que atravesar un
+        // muro equivale a treinta, de modo que solo se elige cuando la alternativa es no tener
+        // conexión.
+        private const float PenalizacionPaso = 2f;    // puertas, huecos, ventanas
+        private const float PenalizacionMuro = 30f;   // muros, forjados, pilares
+        private const float PenalizacionOtro = 10f;   // mobiliario y demás
+
+        /// <summary>
+        /// Tipos IFC que representan un paso practicable: atravesarlos es lo que hace una persona
+        /// al ir de una estancia a otra, no un atajo imposible.
+        /// </summary>
+        private static readonly string[] TiposDePaso =
+        {
+            "IfcDoor", "IfcOpeningElement", "IfcWindow", "IfcStair", "IfcStairFlight", "IfcRamp"
+        };
+
+        /// <summary>Elementos que delimitan de verdad el espacio y no deberían atravesarse.</summary>
+        private static readonly string[] TiposDeCerramiento =
+        {
+            "IfcWall", "IfcWallStandardCase", "IfcSlab", "IfcRoof", "IfcColumn",
+            "IfcBeam", "IfcCurtainWall", "IfcPlate", "IfcMember"
+        };
+
         [MenuItem("Tools/IFC/Generar grafo de navegación")]
         public static void Generar()
         {
@@ -69,15 +121,44 @@ namespace DigitalTwin.EditorTools
                 return;
             }
 
-            var aristas = ConstruirRNG(puntos);
-            int aristasRNG = aristas.Count;
-            int añadidasPorConectividad = GarantizarConectividad(puntos, aristas);
+            // Los colliders no existen en modo edicion: los crea ColliderBootstrapper al
+            // arrancar. Se anaden temporalmente para poder analizar que atraviesa cada trayecto.
+            var collidersTemporales = AsegurarColliders();
+            var aristas = new HashSet<(int, int)>();
+            int aristasRNG = 0, añadidasPorConectividad = 0, conMuro = 0, conPaso = 0, limpias = 0;
+            try
+            {
+                var coste = CalcularCostes(puntos, out int[,] muros, out int[,] pasos);
+
+                aristas = ConstruirRNG(puntos, coste);
+                aristasRNG = aristas.Count;
+                añadidasPorConectividad = GarantizarConectividad(puntos, aristas, coste);
+
+                foreach (var (a, b) in aristas)
+                {
+                    if (muros[a, b] > 0) conMuro++;
+                    else if (pasos[a, b] > 0) conPaso++;
+                    else limpias++;
+                }
+            }
+            finally
+            {
+                EditorUtility.ClearProgressBar();
+                RetirarColliders(collidersTemporales);
+            }
 
             var asset = CrearAsset(puntos, aristas);
 
             Debug.Log($"[NavGraph] Grafo generado: {puntos.Count} nodos, {asset.ContarAristas()} aristas " +
-                      $"({aristasRNG} del RNG + {añadidasPorConectividad} añadidas para unir componentes aisladas). " +
-                      $"Guardado en {RutaAsset}.");
+                      $"({aristasRNG} del RNG + {añadidasPorConectividad} para unir componentes aisladas). " +
+                      $"Trayectos sin obstaculos: {limpias}; a traves de puertas o huecos: {conPaso}; " +
+                      $"atravesando cerramientos: {conMuro}. Guardado en {RutaAsset}.");
+
+            if (conMuro > 0)
+                Debug.LogWarning($"[NavGraph] {conMuro} aristas atraviesan un cerramiento. Es el ultimo " +
+                                 "recurso del algoritmo: ocurre cuando no hay ninguna alternativa por " +
+                                 "puerta. Conviene revisarlas en el asset y comprobar si falta algun punto " +
+                                 "de navegacion intermedio que permitiria rodear.");
 
             Selection.activeObject = asset;
             EditorGUIUtility.PingObject(asset);
@@ -117,6 +198,110 @@ namespace DigitalTwin.EditorTools
             return Vector3.Distance(a, b);
         }
 
+        /// <summary>
+        /// Coste del trayecto entre dos puntos: distancia horizontal más las penalizaciones de
+        /// lo que atraviesa. Es la métrica que alimenta todo el algoritmo, en lugar de la
+        /// distancia pura.
+        ///
+        /// El trazado se hace a la altura de los ojos y no a la del suelo, para que el rayo
+        /// atraviese la hoja de las puertas y los muros a media altura en lugar de colarse por
+        /// debajo del marco o por encima de un zócalo.
+        /// </summary>
+        private static float Coste(Punto a, Punto b, out int pasos, out int muros, out int otros)
+        {
+            pasos = 0; muros = 0; otros = 0;
+
+            Vector3 origen = a.Pos + Vector3.up * AlturaTrazado;
+            Vector3 destino = b.Pos + Vector3.up * AlturaTrazado;
+            Vector3 dir = destino - origen;
+            float longitud = dir.magnitude;
+
+            float penalizacion = 0f;
+            if (longitud > 0.001f)
+            {
+                var impactos = Physics.RaycastAll(origen, dir.normalized, longitud);
+                var yaContados = new HashSet<GameObject>();
+
+                foreach (var h in impactos)
+                {
+                    // Un mismo elemento puede aparecer varias veces (entrada y salida de la
+                    // malla, o troceado en varias submallas por material). Se cuenta una vez.
+                    var meta = h.collider.GetComponentInParent<IfcMetadata>();
+                    var clave = meta != null ? meta.gameObject : h.collider.gameObject;
+                    if (!yaContados.Add(clave)) continue;
+
+                    // Los propios puntos de navegación no son obstáculos.
+                    if (meta != null && meta.ifcType == SceneModelIndex.NavPointIfcType) continue;
+
+                    string tipo = meta != null ? meta.ifcType : null;
+                    if (EsDeTipo(tipo, TiposDePaso))            { pasos++;  penalizacion += PenalizacionPaso; }
+                    else if (EsDeTipo(tipo, TiposDeCerramiento)) { muros++;  penalizacion += PenalizacionMuro; }
+                    else                                         { otros++;  penalizacion += PenalizacionOtro; }
+                }
+            }
+
+            return DistHorizontal(a.Pos, b.Pos) + penalizacion;
+        }
+
+        private static bool EsDeTipo(string ifcType, string[] familia)
+        {
+            if (string.IsNullOrEmpty(ifcType)) return false;
+            foreach (var t in familia)
+                if (ifcType == t || ifcType.StartsWith(t)) return true;
+            return false;
+        }
+
+        /// <summary>Altura sobre el punto a la que se traza el rayo, en metros.</summary>
+        private const float AlturaTrazado = 1.2f;
+
+        /// <summary>
+        /// Los volúmenes de colisión los añade <c>ColliderBootstrapper</c> al arrancar el juego,
+        /// así que en modo edición el modelo no los tiene y las comprobaciones no detectarían
+        /// nada. Esta función los crea temporalmente y devuelve los que ha añadido para poder
+        /// retirarlos después y dejar la escena como estaba.
+        ///
+        /// Se omiten los mismos elementos que en ejecución: volúmenes de espacio, definiciones de
+        /// tipo del catálogo y puntos de navegación. Incluirlos falsearía el resultado, ya que
+        /// los prismas de estancia envuelven habitaciones enteras y toda arista los atravesaría.
+        /// </summary>
+        private static List<Collider> AsegurarColliders()
+        {
+            var index = SceneModelIndex.Build();
+            var excluidos = new HashSet<GameObject>();
+
+            foreach (var lista in new[] { index.Spaces, index.TypeDefinitions, index.NavPoints })
+                foreach (var meta in lista)
+                {
+                    if (meta == null) continue;
+                    foreach (var t in meta.GetComponentsInChildren<Transform>(true))
+                        excluidos.Add(t.gameObject);
+                }
+
+            var creados = new List<Collider>();
+            foreach (var mf in UnityEngine.Object.FindObjectsByType<MeshFilter>(FindObjectsSortMode.None))
+            {
+                var go = mf.gameObject;
+                if (mf.sharedMesh == null) continue;
+                if (excluidos.Contains(go)) continue;
+                if (go.GetComponent<Collider>() != null) continue;
+
+                var col = go.AddComponent<MeshCollider>();
+                col.sharedMesh = mf.sharedMesh;
+                col.convex = false;
+                creados.Add(col);
+            }
+
+            // Las consultas de física usan las posiciones sincronizadas, no las del Transform.
+            Physics.SyncTransforms();
+            return creados;
+        }
+
+        private static void RetirarColliders(List<Collider> creados)
+        {
+            foreach (var c in creados)
+                if (c != null) UnityEngine.Object.DestroyImmediate(c);
+        }
+
         private static bool MismaPlanta(Punto a, Punto b)
         {
             return Mathf.Abs(a.Pos.y - b.Pos.y) <= ToleranciaVertical;
@@ -126,7 +311,7 @@ namespace DigitalTwin.EditorTools
         /// Grafo de vecindad relativa. Coste O(n^3), que con las decenas de puntos de un edificio
         /// como este es instantáneo; no merece la pena complicarlo con estructuras espaciales.
         /// </summary>
-        private static HashSet<(int, int)> ConstruirRNG(List<Punto> p)
+        private static HashSet<(int, int)> ConstruirRNG(List<Punto> p, float[,] coste)
         {
             var aristas = new HashSet<(int, int)>();
             int n = p.Count;
@@ -136,9 +321,10 @@ namespace DigitalTwin.EditorTools
                 for (int j = i + 1; j < n; j++)
                 {
                     if (!MismaPlanta(p[i], p[j])) continue;
+                    if (LongitudMaximaArista > 0f &&
+                        DistHorizontal(p[i].Pos, p[j].Pos) > LongitudMaximaArista) continue;
 
-                    float dij = DistHorizontal(p[i].Pos, p[j].Pos);
-                    if (LongitudMaximaArista > 0f && dij > LongitudMaximaArista) continue;
+                    float cij = coste[i, j];
 
                     bool bloqueada = false;
                     for (int k = 0; k < n && !bloqueada; k++)
@@ -146,10 +332,11 @@ namespace DigitalTwin.EditorTools
                         if (k == i || k == j) continue;
                         if (!MismaPlanta(p[i], p[k]) || !MismaPlanta(p[j], p[k])) continue;
 
-                        // ¿Hay un punto intermedio más cercano a ambos extremos que ellos entre sí?
-                        float dik = DistHorizontal(p[i].Pos, p[k].Pos);
-                        float djk = DistHorizontal(p[j].Pos, p[k].Pos);
-                        if (Mathf.Max(dik, djk) < dij) bloqueada = true;
+                        // Existe un punto intermedio al que llegar es mas barato desde ambos
+                        // extremos que unirlos directamente. Al ser el coste el que incorpora las
+                        // penalizaciones, esto descarta a la vez los enlaces redundantes por
+                        // geometria y los que atraviesan un muro pudiendo rodearlo por la puerta.
+                        if (Mathf.Max(coste[i, k], coste[j, k]) < cij) bloqueada = true;
                     }
 
                     if (!bloqueada) aristas.Add((i, j));
@@ -157,6 +344,37 @@ namespace DigitalTwin.EditorTools
             }
 
             return aristas;
+        }
+
+        /// <summary>
+        /// Matriz de costes entre todos los pares, con el recuento de lo que atraviesa cada
+        /// trayecto. Se calcula una sola vez porque el RNG consulta cada par muchas veces y las
+        /// consultas de fisica son con diferencia lo mas caro del proceso.
+        /// </summary>
+        private static float[,] CalcularCostes(List<Punto> p, out int[,] murosCruzados,
+                                               out int[,] pasosCruzados)
+        {
+            int n = p.Count;
+            var coste = new float[n, n];
+            murosCruzados = new int[n, n];
+            pasosCruzados = new int[n, n];
+
+            for (int i = 0; i < n; i++)
+            {
+                EditorUtility.DisplayProgressBar("Grafo de navegacion",
+                    $"Analizando obstaculos ({i + 1}/{n})...", (i + 1) / (float)n);
+
+                for (int j = i + 1; j < n; j++)
+                {
+                    float c = Coste(p[i], p[j], out int pasos, out int muros, out int _);
+                    coste[i, j] = coste[j, i] = c;
+                    murosCruzados[i, j] = murosCruzados[j, i] = muros;
+                    pasosCruzados[i, j] = pasosCruzados[j, i] = pasos;
+                }
+            }
+
+            EditorUtility.ClearProgressBar();
+            return coste;
         }
 
         /// <summary>
@@ -168,7 +386,8 @@ namespace DigitalTwin.EditorTools
         /// preferible una arista larga, o incluso una que cambie de nivel, a dejar una zona del
         /// edificio a la que no se pueda llegar de ninguna manera.
         /// </summary>
-        private static int GarantizarConectividad(List<Punto> p, HashSet<(int, int)> aristas)
+        private static int GarantizarConectividad(List<Punto> p, HashSet<(int, int)> aristas,
+                                                  float[,] coste)
         {
             int n = p.Count;
             var padre = new int[n];
@@ -193,7 +412,9 @@ namespace DigitalTwin.EditorTools
                     for (int j = i + 1; j < n; j++)
                     {
                         if (Raiz(i) == Raiz(j)) continue;
-                        float d = DistHorizontal(p[i].Pos, p[j].Pos);
+                        // Tambien aqui se usa el coste y no la distancia: si hay que unir dos
+                        // zonas a la fuerza, que sea por donde menos estorbo haya.
+                        float d = coste[i, j];
                         if (d < mejor) { mejor = d; mi = i; mj = j; }
                     }
                 }
@@ -203,8 +424,8 @@ namespace DigitalTwin.EditorTools
                 Unir(mi, mj);
                 añadidas++;
                 Debug.LogWarning($"[NavGraph] Componente aislada detectada: se une '{p[mi].Meta.ifcName}' con " +
-                                 $"'{p[mj].Meta.ifcName}' ({mejor:F1} m) para que no queden zonas inalcanzables. " +
-                                 "Conviene revisar esa arista en el asset por si conviene moverla a otro par.");
+                                 $"'{p[mj].Meta.ifcName}' (coste {mejor:F1}) para que no queden zonas " +
+                                 "inalcanzables. Conviene revisar esa arista en el asset.");
             }
 
             return añadidas;
@@ -238,8 +459,10 @@ namespace DigitalTwin.EditorTools
 
             asset.GeneradoEl = DateTime.Now.ToString("yyyy-MM-dd HH:mm");
             asset.EscenaOrigen = UnityEngine.SceneManagement.SceneManager.GetActiveScene().name;
-            asset.Parametros = $"RNG, distancia horizontal, tolerancia vertical {ToleranciaVertical} m, " +
-                               $"longitud máxima de arista {LongitudMaximaArista} m";
+            asset.Parametros = $"RNG sobre coste; tolerancia vertical {ToleranciaVertical} m; " +
+                               $"longitud máxima {LongitudMaximaArista} m; penalizaciones: " +
+                               $"paso {PenalizacionPaso} m, cerramiento {PenalizacionMuro} m, " +
+                               $"otros {PenalizacionOtro} m";
 
             if (esNuevo) AssetDatabase.CreateAsset(asset, RutaAsset);
             else EditorUtility.SetDirty(asset);
