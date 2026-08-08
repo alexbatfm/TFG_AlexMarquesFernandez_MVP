@@ -56,6 +56,14 @@ namespace DigitalTwin.Core
             var selector = selectorGo.AddComponent<ElementSelector>();
             selector.Initialize(panel, tour);
 
+            // Resaltado del elemento seleccionado. Se engancha a los eventos que el panel ya
+            // publicaba, así que ni ElementSelector ni el propio panel necesitan enterarse.
+            var resaltadoGo = new GameObject("~SelectionHighlighter");
+            Object.DontDestroyOnLoad(resaltadoGo);
+            var resaltador = resaltadoGo.AddComponent<Metadata.SelectionHighlighter>();
+            panel.OnElementShown += meta => resaltador.Resaltar(meta != null ? meta.transform : null);
+            panel.OnPanelHidden += resaltador.Limpiar;
+
             IoT.SensorIntegrationBootstrap.TryAttach(index, panel);
 
             _initialized = true;

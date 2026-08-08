@@ -50,10 +50,34 @@ namespace DigitalTwin.Metadata
         public event Action<IfcMetadata> OnElementShown;
         public event Action OnPanelHidden;
 
+        private Image _fondo;
+
         public void Initialize(Canvas canvas)
         {
             BuildPanel(canvas.transform);
             Hide();
+        }
+
+        /// <summary>
+        /// Ajusta la opacidad del fondo del panel dejando el texto intacto.
+        ///
+        /// Se expone como método y no como un simple color configurable porque la transparencia
+        /// aquí tiene un compromiso que conviene entender: un panel translúcido da sensación de
+        /// espacio y evita la claustrofobia de tener una ficha opaca ocupando media vista, que es
+        /// justo lo que se busca en Realidad Mixta. Pero en un visor con passthrough el fondo real
+        /// puede ser cualquier cosa (una pared con muebles, un cuadro), y si el texto también se
+        /// vuelve translúcido se pierde legibilidad justo cuando más importa.
+        ///
+        /// Por eso solo se toca el alfa del fondo: los textos y los valores de sensor siguen a
+        /// opacidad completa. Un valor en torno a 0,7 funciona bien; por debajo de 0,5 el texto
+        /// empieza a competir con lo que hay detrás.
+        /// </summary>
+        public void SetOpacidadFondo(float alfa)
+        {
+            if (_fondo == null) return;
+            Color c = _fondo.color;
+            c.a = Mathf.Clamp01(alfa);
+            _fondo.color = c;
         }
 
         private void BuildPanel(Transform canvasTransform)
@@ -65,7 +89,7 @@ namespace DigitalTwin.Metadata
             _panelRoot.anchoredPosition = Vector2.zero;
             _panelRoot.sizeDelta = new Vector2(PanelWidth, 0);
 
-            RuntimeUIFactory.CreatePanel(_panelRoot, "Background", new Color(0.05f, 0.06f, 0.08f, 0.92f));
+            _fondo = RuntimeUIFactory.CreatePanel(_panelRoot, "Background", new Color(0.05f, 0.06f, 0.08f, 0.92f));
             var bgRect = (RectTransform)_panelRoot.Find("Background");
             RuntimeUIFactory.StretchToParent(bgRect);
 

@@ -59,16 +59,44 @@ namespace DigitalTwin.MR
             var binder = anclajeGo.AddComponent<ModelAnchorBinder>();
             binder.Initialize(index, anclaje);
 
-            // El panel de metadatos y el middleware IoT se reutilizan tal cual: ninguno de los
-            // dos depende de cómo se renderice la escena. El panel se construye en el mismo
-            // canvas de siempre; su adaptación a world-space (más natural en un visor) queda
-            // pendiente de poder probarla con el dispositivo puesto.
-            var canvas = DigitalTwin.UI.RuntimeUIFactory.CreateRootCanvas("DigitalTwinCanvasMR");
+            // El panel de metadatos y el middleware IoT reutilizan la misma implementación que en
+            // escritorio; lo único que cambia es dónde vive el panel. Aquí el canvas es de tipo
+            // world-space: en un visor, una interfaz pegada a la cara resulta incómoda y rompe la
+            // sensación de estar dentro del edificio.
+            var canvas = DigitalTwin.UI.RuntimeUIFactory.CreateWorldCanvas("DigitalTwinCanvasMR");
 
             var panelGo = new GameObject("~MetadataPanelMR");
             Object.DontDestroyOnLoad(panelGo);
             var panel = panelGo.AddComponent<MetadataPanelController>();
             panel.Initialize(canvas);
+            // Fondo translúcido: da sensación de espacio sin restar legibilidad al texto, que
+            // sigue a opacidad completa (ver SetOpacidadFondo).
+            panel.SetOpacidadFondo(0.7f);
+
+            // Identificación del elemento seleccionado, por triple vía: caja de aristas y tinte
+            // sobre el objeto, panel colocado a su lado, y línea que une panel y objeto. Cada
+            // mecanismo cubre un caso en el que los otros fallan (objeto tapado, elementos
+            // repetidos cerca, objeto lejano).
+            var resaltadoGo = new GameObject("~SelectionHighlighterMR");
+            Object.DontDestroyOnLoad(resaltadoGo);
+            var resaltador = resaltadoGo.AddComponent<SelectionHighlighter>();
+
+            var colocadorGo = new GameObject("~WorldPanelPlacer");
+            Object.DontDestroyOnLoad(colocadorGo);
+            var colocador = colocadorGo.AddComponent<WorldPanelPlacer>();
+            colocador.Initialize(canvas);
+
+            panel.OnElementShown += meta =>
+            {
+                Transform t = meta != null ? meta.transform : null;
+                resaltador.Resaltar(t);
+                colocador.Seguir(t);
+            };
+            panel.OnPanelHidden += () =>
+            {
+                resaltador.Limpiar();
+                colocador.Seguir(null);
+            };
 
             IoT.SensorIntegrationBootstrap.TryAttach(index, panel);
 

@@ -35,6 +35,36 @@ namespace DigitalTwin.UI
             return canvas;
         }
 
+        /// <summary>
+        /// Canvas flotante en el espacio 3D, para Realidad Mixta.
+        ///
+        /// En un visor no existe "la pantalla": un canvas en modo ScreenSpaceOverlay se pega a
+        /// la cara del usuario y resulta incómodo e irreal. Lo natural es un panel que ocupa un
+        /// sitio en el espacio, junto al elemento del que informa.
+        ///
+        /// Se construye con una resolución alta en píxeles (<paramref name="anchoPx"/>) que
+        /// luego se escala a metros: así el texto se define con el mismo tamaño de fuente que en
+        /// escritorio y sigue viéndose nítido, en vez de tener que reescribir todo el layout con
+        /// medidas físicas.
+        /// </summary>
+        public static Canvas CreateWorldCanvas(string name, float anchoPx = 900f, float altoPx = 1100f,
+                                               float anchoMetros = 0.55f)
+        {
+            var go = new GameObject(name, typeof(RectTransform), typeof(Canvas), typeof(GraphicRaycaster));
+            var canvas = go.GetComponent<Canvas>();
+            canvas.renderMode = RenderMode.WorldSpace;
+
+            var rt = (RectTransform)go.transform;
+            rt.sizeDelta = new Vector2(anchoPx, altoPx);
+
+            // Escala uniforme para pasar de píxeles de layout a metros del mundo real.
+            float escala = anchoMetros / anchoPx;
+            rt.localScale = new Vector3(escala, escala, escala);
+
+            Object.DontDestroyOnLoad(go);
+            return canvas;
+        }
+
         public static RectTransform CreateRect(Transform parent, string name)
         {
             var go = new GameObject(name, typeof(RectTransform));
