@@ -70,6 +70,17 @@ namespace DigitalTwin.Visual
                  "siendo legible: un gemelo digital debe poder consultarse a cualquier hora.")]
         public float IntensidadNocturna = 0.15f;
 
+        [Tooltip("Recalcular el cielo procedural y la luz ambiental al moverse el Sol. Sin esto, " +
+                 "la luz directa cambia pero el cielo y el rebote de luz se quedan congelados.")]
+        public bool ActualizarAmbiente = true;
+
+        [Tooltip("Grados que debe girar el Sol para recalcular el ambiente. Recalcularlo cada " +
+                 "fotograma es caro y visualmente indistinguible.")]
+        public float UmbralActualizacionAmbiente = 1.5f;
+
+        private Quaternion _rotacionUltimoAmbiente = Quaternion.identity;
+        private bool _ambienteCalculadoAlgunaVez;
+
         private Light _luz;
 
         /// <summary>Altura del Sol sobre el horizonte, en grados. Negativa de noche.</summary>
@@ -128,6 +139,42 @@ namespace DigitalTwin.Visual
 
             if (ColorSegunAltura != null && ColorSegunAltura.colorKeys.Length > 0)
                 _luz.color = ColorSegunAltura.Evaluate(factor);
+
+            ActualizarCieloYAmbiente();
+        }
+
+        /// <summary>
+        /// Recalcula el cielo procedural y la iluminación ambiental derivada de él.
+        ///
+        /// Por qué hace falta: el cielo procedural de Unity dibuja el disco solar en la posición
+        /// de la luz direccional designada como fuente, y la iluminación ambiental del modo
+        /// "Skybox" se obtiene integrando ese cielo. Pero ninguna de las dos cosas se recalcula
+        /// sola al girar la luz. Sin esta llamada, la luz directa se movería mientras el cielo y
+        /// el rebote de luz se quedan congelados en la orientación que tuvieran al cargar la
+        /// escena, que es peor que no mover nada: la sombra apunta en una dirección y el cielo
+        /// dice otra.
+        ///
+        /// Se limita por umbral de giro porque el recálculo integra el cielo completo y es caro.
+        /// Hacerlo cada fotograma tendría un coste perfectamente perceptible en un visor
+        /// autónomo, y el resultado sería visualmente indistinguible: el Sol se desplaza unos
+        /// 15 grados por hora simulada.
+        /// </summary>
+        private void ActualizarCieloYAmbiente()
+        {
+            if (!ActualizarAmbiente) return;
+
+            if (_ambienteCalculadoAlgunaVez &&
+                Quaternion.Angle(_rotacionUltimoAmbiente, transform.rotation) < UmbralActualizacionAmbiente)
+                return;
+
+            _rotacionUltimoAmbiente = transform.rotation;
+            _ambienteCalculadoAlgunaVez = true;
+
+            // Designar esta luz como fuente del cielo procedural. Si no se hace, Unity elige la
+            // direccional más brillante, que normalmente será esta, pero conviene no depender de
+            // ello en una escena donde puede haber más luces.
+            RenderSettings.sun = _luz;
+            DynamicGI.UpdateEnvironment();
         }
 
         /// <summary>
