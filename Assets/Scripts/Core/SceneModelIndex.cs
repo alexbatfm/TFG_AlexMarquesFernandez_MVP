@@ -59,11 +59,41 @@ namespace DigitalTwin.Core
 
         public readonly List<IfcMetadata> AllElements = new List<IfcMetadata>();
 
-        /// <summary>¿Es una definición de tipo del catálogo IFC y no un elemento colocado?</summary>
+        /// <summary>
+        /// Entidades de estilo que, pese a no terminar en "Type", son definiciones de catálogo.
+        ///
+        /// Son la forma antigua (IFC2x3) de declarar un tipo de puerta o de ventana. Se enumeran
+        /// de forma explícita en lugar de aceptar cualquier tipo terminado en "Style", porque en
+        /// IFC ese sufijo lo comparten también las entidades de presentación
+        /// (<c>IfcSurfaceStyle</c>, <c>IfcCurveStyle</c>) y estas dos son las únicas que
+        /// representan definiciones de producto.
+        /// </summary>
+        private static readonly string[] EstilosDeCatalogo = { "IfcDoorStyle", "IfcWindowStyle" };
+
+        /// <summary>
+        /// ¿Es una definición de catálogo IFC y no un elemento colocado en el edificio?
+        ///
+        /// El criterio de nomenclatura del estándar cubre la mayoría de casos: toda entidad de
+        /// definición de tipo termina en "Type", más <c>IfcTypeProduct</c>, que es su raíz
+        /// abstracta. Pero no todas: <c>IfcDoorStyle</c> es igualmente una definición y no encaja
+        /// en ese patrón. En este modelo hay nueve, y al no filtrarse aparecían como puertas
+        /// flotando en mitad del vestíbulo. Su ruta jerárquica vacía lo confirma: no cuelgan de
+        /// ninguna planta del edificio.
+        ///
+        /// Podría pensarse en usar precisamente esa ruta vacía como criterio, que sería más
+        /// general. No sirve: los montantes y paneles del muro cortina, y los huecos de paso,
+        /// también la tienen vacía en este modelo por cómo los exporta Revit, y son geometría
+        /// perfectamente real. Filtrar por ruta ocultaría la fachada entera.
+        /// </summary>
         public static bool EsDefinicionDeTipo(string ifcType)
         {
             if (string.IsNullOrEmpty(ifcType)) return false;
-            return ifcType.EndsWith("Type") || ifcType == "IfcTypeProduct";
+            if (ifcType.EndsWith("Type") || ifcType == "IfcTypeProduct") return true;
+
+            foreach (var estilo in EstilosDeCatalogo)
+                if (ifcType == estilo) return true;
+
+            return false;
         }
 
         public static SceneModelIndex Build()

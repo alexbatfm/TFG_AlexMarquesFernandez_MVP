@@ -243,9 +243,12 @@ namespace DigitalTwin.EditorTools
                                 !string.IsNullOrEmpty(meta.ifcName) &&
                                 meta.ifcName.StartsWith(SceneModelIndex.NavPointPrefix);
 
-                // Solo IfcDoor, no IfcDoorStyle ni IfcDoorType: las definiciones de catálogo no
-                // están colocadas en el edificio.
-                bool esPuerta = UsarPuertasComoNodos && meta.ifcType == "IfcDoor";
+                // Solo IfcDoor, y ademas se descarta explicitamente cualquier definicion de
+                // catalogo. La comprobacion de tipo exacto ya excluye IfcDoorStyle e IfcDoorType,
+                // pero se deja la guarda para que el criterio quede en un unico sitio y no se
+                // desincronice si en el futuro se admiten mas tipos como nodo.
+                bool esPuerta = UsarPuertasComoNodos && meta.ifcType == "IfcDoor" &&
+                                !SceneModelIndex.EsDefinicionDeTipo(meta.ifcType);
 
                 if (!esEsfera && !esPuerta) continue;
 

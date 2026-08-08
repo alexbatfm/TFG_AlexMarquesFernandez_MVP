@@ -78,7 +78,7 @@ namespace DigitalTwin.Core
         /// espacio y definiciones de tipo del catálogo. Se recorren juntos porque el tratamiento
         /// es el mismo, aunque el motivo de cada uno sea distinto (ver SceneModelIndex).
         /// </summary>
-        private static IEnumerable<IfcMetadata> Ocultables(SceneModelIndex index)
+        private static IEnumerable<IFCImporter.IfcMetadata> Ocultables(SceneModelIndex index)
         {
             foreach (var m in index.Spaces) yield return m;
             foreach (var m in index.TypeDefinitions) yield return m;
