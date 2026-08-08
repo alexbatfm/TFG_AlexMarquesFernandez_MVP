@@ -16,7 +16,7 @@ namespace DigitalTwin.MR
     /// referencia conocido del modelo hasta la pose del anchor, y aplicarla al modelo entero.
     ///
     /// Como punto de referencia se usa uno de los puntos de navegación "Esfera..." del propio
-    /// IFC (por defecto el primero indexado, configurable con <see cref="IndicePuntoReferencia"/>).
+    /// IFC, elegido por su GlobalId (ver <see cref="GlobalIdPuntoReferencia"/>).
     /// Se eligen estos y no el origen del modelo porque son posiciones reconocibles físicamente
     /// dentro del edificio: el operario puede situarse en ese punto real y confirmar allí el
     /// anclaje, que es un gesto mucho más preciso que intentar adivinar dónde cae un origen
@@ -24,8 +24,20 @@ namespace DigitalTwin.MR
     /// </summary>
     public class ModelAnchorBinder : MonoBehaviour
     {
-        [Tooltip("Cuál de los puntos 'Esfera...' del modelo se usa como referencia física.")]
-        public int IndicePuntoReferencia = 0;
+        /// <summary>
+        /// GlobalId IFC del punto "Esfera..." que se usa como referencia física.
+        ///
+        /// Se identifica por GlobalId y no por índice a propósito: <c>FindObjectsByType</c>, que
+        /// es lo que alimenta <see cref="SceneModelIndex"/>, no garantiza un orden estable entre
+        /// ejecuciones ni entre versiones de Unity. Un índice podría apuntar hoy al recibidor y
+        /// mañana a un baño, desplazando el edificio entero sin ningún error visible. El
+        /// GlobalId viene del IFC y no cambia nunca.
+        ///
+        /// Por defecto, el punto del Recibidor (la entrada del edificio): es el sitio más fácil
+        /// de localizar físicamente por un operario que llega de fuera.
+        /// </summary>
+        [Tooltip("GlobalId IFC del punto 'Esfera...' usado como referencia. Por defecto, el del Recibidor.")]
+        public string GlobalIdPuntoReferencia = "0rnbMfC4L9qhDOi7l3AfPB";
 
         [Tooltip("Si está activo, solo se alinea el giro en horizontal (yaw). Recomendado: el " +
                  "edificio no debe inclinarse aunque el anclaje se cree con el mando torcido.")]
@@ -69,17 +81,30 @@ namespace DigitalTwin.MR
             return t;
         }
 
+        private IfcMetadata _metaReferencia;
+
         private Transform ResolverPuntoReferencia(SceneModelIndex index)
         {
             if (index.NavPoints.Count == 0) return null;
 
-            int i = Mathf.Clamp(IndicePuntoReferencia, 0, index.NavPoints.Count - 1);
-            if (i != IndicePuntoReferencia)
+            foreach (var punto in index.NavPoints)
             {
-                Debug.LogWarning($"[DigitalTwin][MR] IndicePuntoReferencia={IndicePuntoReferencia} fuera de " +
-                                 $"rango ({index.NavPoints.Count} puntos); se usa el {i}.");
+                if (punto != null && punto.globalId == GlobalIdPuntoReferencia)
+                {
+                    _metaReferencia = punto;
+                    return punto.transform;
+                }
             }
-            return index.NavPoints[i].transform;
+
+            // Si el GlobalId configurado no aparece (modelo distinto, o reexportado con otros
+            // identificadores) se cae al primer punto para no dejar el sistema inservible, pero
+            // se avisa bien claro: el modelo quedará anclado en un sitio que no es el previsto.
+            _metaReferencia = index.NavPoints[0];
+            Debug.LogWarning($"[DigitalTwin][MR] No se ha encontrado el punto de referencia con GlobalId " +
+                             $"'{GlobalIdPuntoReferencia}' entre los {index.NavPoints.Count} puntos del modelo. " +
+                             $"Se usa '{_metaReferencia.ifcName}' como sustituto: comprueba que el anclaje " +
+                             $"queda donde esperas, o corrige GlobalIdPuntoReferencia.");
+            return _metaReferencia.transform;
         }
 
         /// <summary>
@@ -109,8 +134,9 @@ namespace DigitalTwin.MR
             _raizModelo.position += pose.position - _puntoReferencia.position;
 
             EstaVinculado = true;
-            Debug.Log($"[DigitalTwin][MR] Modelo anclado usando '{_index.NavPoints[Mathf.Clamp(IndicePuntoReferencia, 0, _index.NavPoints.Count - 1)].ifcName}' " +
-                      $"como referencia. Desviación residual: {Vector3.Distance(_puntoReferencia.position, pose.position):F4} m.");
+            Debug.Log($"[DigitalTwin][MR] Modelo anclado usando '{_metaReferencia.ifcName}' como referencia " +
+                      $"(GlobalId {_metaReferencia.globalId}). Desviación residual: " +
+                      $"{Vector3.Distance(_puntoReferencia.position, pose.position):F4} m.");
         }
     }
 }
