@@ -51,6 +51,7 @@ namespace DigitalTwin.Metadata
         public event Action OnPanelHidden;
 
         private Image _fondo;
+        private RectTransform _titleRect, _subtitleRect, _pathRect;
 
         public void Initialize(Canvas canvas)
         {
@@ -80,6 +81,49 @@ namespace DigitalTwin.Metadata
             _fondo.color = c;
         }
 
+        /// <summary>
+        /// Recoloca los tres textos de la cabecera según lo que ocupe realmente cada uno, y baja
+        /// el inicio de la lista de propiedades para que empiece justo debajo.
+        ///
+        /// Hace falta porque los textos se crean con <c>verticalOverflow = Overflow</c>: cuando
+        /// uno no cabe en su rectángulo no se recorta, se desborda y se dibuja encima del
+        /// siguiente. Con alturas fijas (pensadas para una línea) bastaba un nombre largo o un
+        /// tipo IFC de los extensos para que el subtítulo pisara la ruta jerárquica.
+        ///
+        /// Se prefiere Overflow y recolocar, en vez de Truncate: en un panel de mantenimiento es
+        /// peor perder silenciosamente el final de una ruta o de un identificador que gastar unos
+        /// píxeles de más.
+        /// </summary>
+        private void RecolocarCabecera()
+        {
+            const float Separacion = 6f;
+            float y = Padding;
+
+            // El título deja hueco a la derecha para el botón de cerrar; los otros dos usan todo
+            // el ancho disponible.
+            y += ColocarBloque(_titleRect, _titleText, y, anchoExtra: -34f, minimo: 30f, maximo: 90f) + Separacion;
+            y += ColocarBloque(_subtitleRect, _subtitleText, y, anchoExtra: 0f, minimo: 22f, maximo: 60f) + Separacion;
+            y += ColocarBloque(_pathRect, _pathText, y, anchoExtra: 0f, minimo: 16f, maximo: 90f) + Padding;
+
+            _viewport.offsetMax = new Vector2(-Padding, -y);
+        }
+
+        /// <summary>
+        /// Coloca un bloque de la cabecera a la altura indicada y le da la altura que su texto
+        /// necesita, acotada entre un mínimo y un máximo. Devuelve la altura aplicada.
+        ///
+        /// El máximo evita que una ruta jerárquica muy larga se coma media ventana y deje sin
+        /// sitio a la lista de propiedades, que es a lo que el operario suele venir.
+        /// </summary>
+        private float ColocarBloque(RectTransform rect, Text texto, float y, float anchoExtra,
+                                    float minimo, float maximo)
+        {
+            rect.anchoredPosition = new Vector2(Padding, -y);
+            float alto = Mathf.Clamp(texto.preferredHeight, minimo, maximo);
+            rect.sizeDelta = new Vector2(-Padding * 2f + anchoExtra, alto);
+            return alto;
+        }
+
         private void BuildPanel(Transform canvasTransform)
         {
             _panelRoot = RuntimeUIFactory.CreateRect(canvasTransform, "MetadataPanel");
@@ -106,7 +150,8 @@ namespace DigitalTwin.Metadata
             ClickRouter.Instance.Register(closeRect, Hide, sortOrder: 20, isActive: () => _panelRoot.gameObject.activeSelf);
 
             // Cabecera
-            var titleRect = RuntimeUIFactory.CreateRect(_panelRoot, "Title");
+            _titleRect = RuntimeUIFactory.CreateRect(_panelRoot, "Title");
+            var titleRect = _titleRect;
             titleRect.anchorMin = new Vector2(0, 1);
             titleRect.anchorMax = new Vector2(1, 1);
             titleRect.pivot = new Vector2(0, 1);
@@ -115,7 +160,8 @@ namespace DigitalTwin.Metadata
             _titleText = RuntimeUIFactory.CreateText(titleRect, "Text", "", 22, TextAnchor.UpperLeft, Color.white, FontStyle.Bold);
             RuntimeUIFactory.StretchToParent((RectTransform)_titleText.transform);
 
-            var subtitleRect = RuntimeUIFactory.CreateRect(_panelRoot, "Subtitle");
+            _subtitleRect = RuntimeUIFactory.CreateRect(_panelRoot, "Subtitle");
+            var subtitleRect = _subtitleRect;
             subtitleRect.anchorMin = new Vector2(0, 1);
             subtitleRect.anchorMax = new Vector2(1, 1);
             subtitleRect.pivot = new Vector2(0, 1);
@@ -124,7 +170,8 @@ namespace DigitalTwin.Metadata
             _subtitleText = RuntimeUIFactory.CreateText(subtitleRect, "Text", "", 15, TextAnchor.UpperLeft, new Color(0.75f, 0.85f, 1f, 1f));
             RuntimeUIFactory.StretchToParent((RectTransform)_subtitleText.transform);
 
-            var pathRect = RuntimeUIFactory.CreateRect(_panelRoot, "Path");
+            _pathRect = RuntimeUIFactory.CreateRect(_panelRoot, "Path");
+            var pathRect = _pathRect;
             pathRect.anchorMin = new Vector2(0, 1);
             pathRect.anchorMax = new Vector2(1, 1);
             pathRect.pivot = new Vector2(0, 1);
@@ -162,9 +209,13 @@ namespace DigitalTwin.Metadata
             _panelRoot.gameObject.SetActive(true);
 
             _titleText.text = string.IsNullOrEmpty(meta.ifcName) ? "(sin nombre)" : meta.ifcName;
-            _subtitleText.text = $"{meta.ifcType}  ·  Tag {meta.ifcTag}  ·  GlobalId {meta.globalId}";
+            // El tipo y la etiqueta van en una línea y el GlobalId en otra: juntos superaban el
+            // ancho del panel y forzaban un salto de línea imprevisible según la longitud del
+            // nombre del tipo, que es lo que provocaba que la cabecera descuadrara.
+            _subtitleText.text = $"{meta.ifcType}  ·  Tag {meta.ifcTag}\n{meta.globalId}";
             _pathText.text = meta.hierarchyPath;
 
+            RecolocarCabecera();
             RebuildContent(meta);
             _scrollArea.ResetScroll();
             OnElementShown?.Invoke(meta);
