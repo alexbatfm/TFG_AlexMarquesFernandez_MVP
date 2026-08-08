@@ -63,6 +63,10 @@ namespace DigitalTwin.Navigation
         private readonly List<HotspotSlot> _pool = new List<HotspotSlot>();
         private float _refreshTimer;
 
+        // El aviso de "todo ocluido" se emite una sola vez: RefreshHotspots se ejecuta varias
+        // veces por segundo y, sin esta guarda, inundaría la consola y taparía el resto de logs.
+        private bool _avisoOclusionTotalMostrado;
+
         public void Initialize(SceneModelIndex index, Canvas canvas)
         {
             _canvas = canvas;
@@ -208,17 +212,55 @@ namespace DigitalTwin.Navigation
                 .ToList();
 
             var visible = new List<NavPointData>();
+            Collider primerBloqueo = null;
+
             foreach (var c in candidates)
             {
                 Vector3 target = c.Point.Transform.position + Vector3.up * 0.05f;
                 bool occluded = Physics.Linecast(eye, target, out RaycastHit hit, mask) &&
                                 (target - eye).magnitude - hit.distance > 0.15f;
-                if (occluded) continue;
+                if (occluded)
+                {
+                    if (primerBloqueo == null) primerBloqueo = hit.collider;
+                    continue;
+                }
 
                 if (c.Dist <= MaxHotspotDistance || visible.Count < MinHotspotsAlwaysShown)
                     visible.Add(c.Point);
 
                 if (visible.Count >= MaxHotspotsShown) break;
+            }
+
+            // Red de seguridad: si la oclusión ha descartado todos los candidatos, se muestran
+            // igualmente los más cercanos.
+            //
+            // La comprobación de MinHotspotsAlwaysShown del bucle no bastaba, porque el `continue`
+            // por oclusión se ejecuta ANTES de llegar a ella: con todos los puntos tapados, el
+            // tour se quedaba sin ningún hotspot y por tanto sin salida, que es exactamente el
+            // caso que esa garantía pretendía evitar. Ocurría, por ejemplo, mientras los
+            // volúmenes IfcSpace conservaban collider y envolvían habitaciones enteras.
+            //
+            // Se prefiere un hotspot geométricamente imperfecto (que atraviese un tabique) a
+            // dejar al operario encerrado sin poder moverse: lo segundo parece que la aplicación
+            // está rota, lo primero como mucho resulta poco elegante.
+            if (visible.Count == 0 && candidates.Count > 0)
+            {
+                int cuantos = Mathf.Min(MinHotspotsAlwaysShown, candidates.Count);
+                for (int i = 0; i < cuantos; i++) visible.Add(candidates[i].Point);
+
+                if (!_avisoOclusionTotalMostrado)
+                {
+                    _avisoOclusionTotalMostrado = true;
+                    string culpable = primerBloqueo != null
+                        ? $"'{primerBloqueo.name}' (capa {LayerMask.LayerToName(primerBloqueo.gameObject.layer)})"
+                        : "desconocido";
+                    Debug.LogWarning($"[DigitalTwin] Desde '{_current.DisplayName}' la comprobación de línea de " +
+                                     $"visión descarta los {candidates.Count} puntos de navegación. Se muestran los " +
+                                     $"{cuantos} más cercanos de todos modos para no dejar el tour sin salida. " +
+                                     $"Primer obstáculo detectado: {culpable}. Si es geometría que no debería " +
+                                     "bloquear (un volumen de espacio, un techo, un falso suelo), hay que excluirla " +
+                                     "de la máscara de oclusión igual que se hace con IfcSpace.");
+                }
             }
 
             for (int i = 0; i < _pool.Count; i++)
