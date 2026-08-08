@@ -9,6 +9,7 @@ namespace DigitalTwin.UI
     /// cuenta, para que un arrastre para mirar alrededor nunca se interprete además como un
     /// clic de selección.
     /// </summary>
+    [DefaultExecutionOrder(-200)]
     public class PointerGesture : MonoBehaviour
     {
         private static PointerGesture _instance;
@@ -53,7 +54,13 @@ namespace DigitalTwin.UI
                 IsDragging = false;
                 _pressPos = pos;
                 _lastPos = pos;
-                PressStartedOverUI = ClickRouter.Instance.IsPointerOverUI();
+                // Se consultan las dos fuentes: el estado actual (caso normal, con este script
+                // ejecutándose antes que el router) y el valor que el router guardó al procesar
+                // la pulsación (por si ya se ejecutó y su callback ocultó la UI implicada, que
+                // dejaría IsPointerOverUI devolviendo false). Con ambas, el resultado no depende
+                // del orden de ejecución.
+                PressStartedOverUI = ClickRouter.Instance.IsPointerOverUI() ||
+                                     ClickRouter.Instance.PulsacionIniciadaSobreUI;
             }
             else if (pressed && IsPressed)
             {

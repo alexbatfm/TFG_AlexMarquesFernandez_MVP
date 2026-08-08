@@ -28,6 +28,13 @@ namespace DigitalTwin.UI
         public Func<bool> IsActive;
     }
 
+    /// <summary>
+    /// Orden de ejecución explícito: este router debe correr DESPUÉS de
+    /// <see cref="PointerGesture"/> (que está en -200) y ANTES de los sistemas de mundo, que
+    /// van en el orden por defecto. Ver la explicación del problema en
+    /// <see cref="PulsacionIniciadaSobreUI"/>.
+    /// </summary>
+    [DefaultExecutionOrder(-100)]
     public class ClickRouter : MonoBehaviour
     {
         private static ClickRouter _instance;
@@ -103,10 +110,38 @@ namespace DigitalTwin.UI
             return false;
         }
 
+        private bool _pulsacionSobreUI;
+        private int _framePulsacion = -1;
+
+        /// <summary>
+        /// True si la pulsación de ESTE fotograma empezó sobre un elemento de UI, evaluado
+        /// ANTES de ejecutar el callback correspondiente.
+        ///
+        /// Existe por un problema que no es evidente: el callback de un botón puede ocultar la
+        /// propia UI sobre la que se acaba de pulsar (el botón de cerrar del panel de metadatos
+        /// es exactamente ese caso). A partir de ese momento <see cref="IsPointerOverUI"/>
+        /// devuelve false, porque el rect ya no está activo. Si otro sistema pregunta después
+        /// —por ejemplo la detección de gestos, para decidir si el clic era "de UI" o "de
+        /// mundo"— recibe una respuesta engañosa: el acto de cerrar el panel ha borrado la
+        /// prueba de que la pulsación fue sobre él.
+        ///
+        /// El síntoma era que al pulsar cerrar, el panel se cerraba y se reabría al instante:
+        /// el selector de elementos daba por bueno el clic, lanzaba su raycast por donde estaba
+        /// el panel, golpeaba el elemento que había detrás y lo volvía a mostrar.
+        ///
+        /// Guardar el valor con marca de fotograma lo hace además independiente del orden de
+        /// ejecución de los scripts, que es la causa raíz del problema.
+        /// </summary>
+        public bool PulsacionIniciadaSobreUI => _pulsacionSobreUI && _framePulsacion == Time.frameCount;
+
         private void Update()
         {
             if (!ClickedThisFrame()) return;
             Vector2 pos = PointerPosition();
+
+            // Se evalúa y se guarda ANTES de invocar nada: después puede ser ya falso.
+            _pulsacionSobreUI = IsPointerOverUI();
+            _framePulsacion = Time.frameCount;
 
             ClickTarget best = null;
             for (int i = 0; i < _targets.Count; i++)
