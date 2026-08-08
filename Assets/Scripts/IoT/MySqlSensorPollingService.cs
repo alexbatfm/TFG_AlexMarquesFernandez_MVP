@@ -146,7 +146,13 @@ namespace DigitalTwin.IoT
                 }
             }
 
-            _watermarks[table] = maxSeen == DateTime.MinValue ? DateTime.UtcNow : maxSeen;
+            // Si la tabla estaba vacía no hay marca de agua que heredar y hay que inventarla.
+            // Se usa DateTime.Now (hora local) y NO DateTime.UtcNow: la columna `recorded_at`
+            // es un DATETIME de MySQL, sin zona horaria, y todo el histórico está escrito en
+            // hora local. Mezclar ambas escalas desplazaría la marca de agua tantas horas como
+            // diste el equipo de UTC (en España, 1 o 2), con lo que las primeras lecturas
+            // nuevas podrían quedar por debajo del corte y no llegar nunca al panel.
+            _watermarks[table] = maxSeen == DateTime.MinValue ? DateTime.Now : maxSeen;
         }
 
         private void ApplyRow(MySqlDataReader reader, SensorKind kind, DateTime recordedAt)

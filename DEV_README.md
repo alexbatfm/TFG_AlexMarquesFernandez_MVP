@@ -200,7 +200,67 @@ Los sensores EQE... ya se detectan desde la Fase 1 (`SceneModelIndex.Sensors`, v
 
 ---
 
-## Fase 5 — Pruebas end-to-end y limitaciones conocidas del MVP
+## Fase 5 — Realidad Mixta sobre HTC Vive Focus Vision
+
+**Archivos:** `MR/MRAnchorService.cs`, `MR/ModelAnchorBinder.cs`, `MR/MRDigitalTwinBootstrap.cs`.
+
+**Cambio de rumbo respecto al plan inicial.** El diseño de partida
+(`TFG/docs/roadmap/ADR-001-integracion-ar.md`) preveía AR Foundation sobre móvil con anclaje
+por marcador impreso (`ARTrackedImageManager`). Al confirmarse que hay un **HTC Vive Focus
+Vision** disponible se revisó el ADR, y al revisar qué extensiones OpenXR soporta ese
+dispositivo apareció un dato que invalidaba la idea original: **no hay ninguna extensión de
+seguimiento de imágenes**. Lo que sí ofrece son `XR_HTC_anchor` y `XR_HTC_anchor_persistant`
+(anchors espaciales persistentes, disponibles en Focus Vision y XR Elite pero no en Focus 3).
+
+Por eso el anclaje es **"colocar una vez y recordar"** en vez de "reconocer un marcador cada
+vez": la primera ejecución pide al operario situar el modelo sobre el edificio real, se crea
+el anchor y se persiste; las siguientes lo restauran solas. Además de ser lo que el hardware
+permite, encaja mejor con el caso de uso (un operario no debería ir pegando marcadores).
+
+**Estructura:**
+- `MRAnchorService`: ciclo de vida del anclaje (soporte → adquirir colección persistida →
+  restaurar si existe → si no, esperar colocación → crear y persistir). Expone `OnAnclado`
+  con la pose y `OnEstadoCambiado`. Todas las llamadas al SDK están guardadas por
+  comprobaciones de soporte, así que la escena sigue siendo abrible sin visor.
+- `ModelAnchorBinder`: coloca el modelo. **El detalle que importa:** el anchor da una pose del
+  mundo físico, pero el origen del modelo viene del IFC y no coincide con ningún punto notable
+  del edificio; colocar el modelo directamente en la pose del anchor lo dejaría desplazado. Lo
+  que se hace es calcular la transformación que lleva un **punto de navegación "Esfera..."**
+  (referencia física reconocible) hasta la pose del anchor, y aplicarla a la raíz del modelo.
+  Por defecto solo alinea el giro horizontal, para que el edificio no quede inclinado si el
+  anclaje se crea con el mando torcido.
+- `MRDigitalTwinBootstrap`: equivalente MR de `DigitalTwinBootstrap`. Diferencia de orden: en
+  escritorio se puede indexar y navegar nada más cargar; aquí el modelo no tiene posición
+  válida hasta que hay anclaje, así que es indexar → esperar anclaje → colocar → interactuar.
+
+**Convivencia de los dos modos.** Ambos bootstraps se autoejecutan con
+`RuntimeInitializeOnLoadMethod` en *cualquier* escena, así que cada uno comprueba el nombre de
+la escena activa (`MRDigitalTwinBootstrap.NombreEscenaMR = "MRScene"`). Sin esa guarda, el modo
+escritorio montaría su tour y su cámara encima del visor. `MainScene` se comporta exactamente
+igual que antes de existir la Fase 5.
+
+**Reutilización:** el middleware IoT (`IoT/*`) se usa **sin ningún cambio** — es totalmente
+ajeno a cómo se renderiza la escena. El panel de metadatos también se reutiliza tal cual; su
+adaptación a *world-space* (más natural en un visor que un panel fijo a pantalla) queda
+pendiente de poder probarla con el dispositivo puesto.
+
+**Pendiente en el Editor (no se puede hacer desde una shell):**
+1. Crear `Assets/Scenes/MRScene.unity` con un XR Origin (su cámara con tag `MainCamera`) y el
+   modelo importado, y añadirla a Build Settings.
+2. Activar en Project Settings > XR Plug-in Management > OpenXR (pestaña Android) las features
+   `VIVE XR Anchor`, `VIVE XR Passthrough` y `VIVE XR Composition Layer`.
+3. Construir la UI de colocación del anclaje: algo que llame a
+   `MRAnchorService.ColocarEnPose(pose del mando)` al confirmar. No se ha escrito porque
+   depende de decisiones de interacción (¿qué botón? ¿rayo o mano?) que conviene tomar con el
+   visor puesto.
+4. Convertir materiales de VIVE a URP si hace falta: `Edit > Rendering > Materials > Convert
+   Selected Built-in Materials to URP` (el SDK los trae para SRP; Unity 6 usa URP por defecto).
+5. Known issue de HTC con OpenXR ≥1.12.1 en Android: visión recortada; se corrige poniendo
+   `XRSettings.occlusionMaskScale = 0` y `useOcclusionMesh = false` al arrancar.
+
+---
+
+## Verificación end-to-end y limitaciones conocidas del MVP
 
 **Aviso importante sobre el alcance de esta fase:** todo el desarrollo (Fases 1-4) se ha hecho
 sin acceso a un Editor de Unity gráfico ni a un contenedor Docker en marcha en este entorno —

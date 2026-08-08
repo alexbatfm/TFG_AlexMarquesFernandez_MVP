@@ -65,7 +65,16 @@ namespace DigitalTwin.IoT
                 case "humedad": return SensorKind.Humedad;
                 case "presion": return SensorKind.Presion;
                 case "presencia": return SensorKind.Presencia;
-                default: return SensorKind.Temperatura;
+                default:
+                    // La columna `sensor_type` es un ENUM en el esquema, así que llegar aquí
+                    // significa que alguien lo ha ampliado sin actualizar este código. Antes
+                    // se devolvía Temperatura en silencio: el panel habría mostrado el valor
+                    // con las unidades equivocadas (p. ej. una presión en grados centígrados)
+                    // sin ninguna señal de que algo iba mal. Es preferible avisar.
+                    Debug.LogWarning($"[DigitalTwin][IoT] Tipo de sensor no reconocido en la base de datos: " +
+                                     $"'{sensorType}'. Se interpretará como temperatura; añádelo a " +
+                                     $"SensorKind y a ParseKind si es un tipo nuevo.");
+                    return SensorKind.Temperatura;
             }
         }
     }

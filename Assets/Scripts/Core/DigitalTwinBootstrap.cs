@@ -24,6 +24,11 @@ namespace DigitalTwin.Core
             // escena se recarga durante la misma ejecución.
             if (_initialized) return;
 
+            // Fase 5: en la escena de Realidad Mixta manda MRDigitalTwinBootstrap. Ambos se
+            // autoejecutan al cargar cualquier escena, así que sin esta comprobación el modo
+            // escritorio montaría aquí su tour y su cámara, pisando al del visor.
+            if (DigitalTwin.MR.MRDigitalTwinBootstrap.EsEscenaMR()) return;
+
             if (Camera.main == null)
             {
                 Debug.LogWarning("[DigitalTwin] No se ha encontrado ninguna cámara con tag MainCamera en la escena; " +
