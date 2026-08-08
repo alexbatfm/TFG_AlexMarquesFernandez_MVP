@@ -1,0 +1,199 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: dd850e1ee997f8b4693c056f3472f636, type: 3}
+  m_Name: NavGraph
+  m_EditorClassIdentifier: Assembly-CSharp::DigitalTwin.Navigation.NavGraphAsset
+  Nodos:
+  - GlobalId: 0Pv8CPskj9CfRE25oS3iwE
+    Nombre: Esfera_R24:Esfera_R24:261454
+    Sala: Puestos
+    Posicion: {x: 49.322998, y: 1.5500001, z: -51.102177}
+    Vecinos: 1a00000020000000
+  - GlobalId: 0rnbMfC4L9qhDOi7l3Af6E
+    Nombre: Esfera_R24:Esfera_R24:256370
+    Sala: "BA\xD1OS"
+    Posicion: {x: 35.891663, y: 1.5500001, z: -49.44907}
+    Vecinos: 050000000d00000010000000
+  - GlobalId: 0rnbMfC4L9qhDOi7l3AfO3
+    Nombre: Esfera_R24:Esfera_R24:257791
+    Sala: "Almac\xE9n"
+    Posicion: {x: 44.566658, y: 1.5500001, z: -47.846207}
+    Vecinos: 030000001e00000021000000
+  - GlobalId: 0rnbMfC4L9qhDOi7l3AfO4
+    Nombre: Esfera_R24:Esfera_R24:257784
+    Sala: "Almac\xE9n"
+    Posicion: {x: 46.96666, y: 1.5500001, z: -47.846207}
+    Vecinos: 020000000700000020000000
+  - GlobalId: 0rnbMfC4L9qhDOi7l3AfOD
+    Nombre: Esfera_R24:Esfera_R24:257777
+    Sala: Hall
+    Posicion: {x: 39.310772, y: 1.5500001, z: -51.831207}
+    Vecinos: 1000000011000000
+  - GlobalId: 0rnbMfC4L9qhDOi7l3AfOM
+    Nombre: Esfera_R24:Esfera_R24:257770
+    Sala: Hall
+    Posicion: {x: 39.310772, y: 1.5500001, z: -47.216087}
+    Vecinos: 010000000a00000021000000
+  - GlobalId: 0rnbMfC4L9qhDOi7l3AfOV
+    Nombre: Esfera_R24:Esfera_R24:257763
+    Sala: Cocina
+    Posicion: {x: 44.520164, y: 1.5500001, z: -44.446205}
+    Vecinos: 070000000800000021000000
+  - GlobalId: 0rnbMfC4L9qhDOi7l3AfOc
+    Nombre: Esfera_R24:Esfera_R24:257754
+    Sala: Camerino
+    Posicion: {x: 47.976982, y: 1.5500001, z: -45.180977}
+    Vecinos: 0300000006000000
+  - GlobalId: 0rnbMfC4L9qhDOi7l3AfOl
+    Nombre: Esfera_R24:Esfera_R24:257747
+    Sala: Sala Multiuso
+    Posicion: {x: 42.316658, y: 1.5500001, z: -40.260532}
+    Vecinos: 06000000090000000c000000
+  - GlobalId: 0rnbMfC4L9qhDOi7l3AfOm
+    Nombre: Esfera_R24:Esfera_R24:257740
+    Sala: Sala Multiuso
+    Posicion: {x: 46.96666, y: 1.5500001, z: -40.260532}
+    Vecinos: 08000000
+  - GlobalId: 0rnbMfC4L9qhDOi7l3AfOv
+    Nombre: Esfera_R24:Esfera_R24:257733
+    Sala: Comedor
+    Posicion: {x: 37.906082, y: 1.5500001, z: -43.73856}
+    Vecinos: 050000000b000000
+  - GlobalId: 0rnbMfC4L9qhDOi7l3AfP2
+    Nombre: Esfera_R24:Esfera_R24:257726
+    Sala: Comedor
+    Posicion: {x: 37.906082, y: 1.5500001, z: -41.13732}
+    Vecinos: 0a0000000c000000
+  - GlobalId: 0rnbMfC4L9qhDOi7l3AfPB
+    Nombre: Esfera_R24:Esfera_R24:257719
+    Sala: Recibidor
+    Posicion: {x: 38.846085, y: 1.5500001, z: -38.407364}
+    Vecinos: 080000000b000000
+  - GlobalId: 0rnbMfC4L9qhDOi7l3AfPG
+    Nombre: Esfera_R24:Esfera_R24:257708
+    Sala: "BA\xD1OS"
+    Posicion: {x: 34.238102, y: 1.5500001, z: -48.75706}
+    Vecinos: 01000000
+  - GlobalId: 0rnbMfC4L9qhDOi7l3AfPV
+    Nombre: Esfera_R24:Esfera_R24:257699
+    Sala: "BA\xD1OS"
+    Posicion: {x: 34.566612, y: 1.5500001, z: -50.831207}
+    Vecinos: 0f000000
+  - GlobalId: 0rnbMfC4L9qhDOi7l3AfPW
+    Nombre: Esfera_R24:Esfera_R24:257692
+    Sala: "BA\xD1OS"
+    Posicion: {x: 35.793053, y: 1.5500001, z: -51.031204}
+    Vecinos: 0e00000010000000
+  - GlobalId: 0rnbMfC4L9qhDOi7l3AfPl
+    Nombre: Esfera_R24:Esfera_R24:257683
+    Sala: Cuarto Limpieza
+    Posicion: {x: 36.628235, y: 1.5500001, z: -50.834362}
+    Vecinos: 01000000040000000f000000
+  - GlobalId: 0rnbMfC4L9qhDOi7l3AfU6
+    Nombre: Esfera_R24:Esfera_R24:257914
+    Sala: Sala Reuniones
+    Posicion: {x: 38.996082, y: 1.5500001, z: -55.139915}
+    Vecinos: 0400000012000000
+  - GlobalId: 0rnbMfC4L9qhDOi7l3AfUF
+    Nombre: Esfera_R24:Esfera_R24:257907
+    Sala: Sala Reuniones
+    Posicion: {x: 42.806084, y: 1.5500001, z: -55.92957}
+    Vecinos: 110000001400000022000000
+  - GlobalId: 0rnbMfC4L9qhDOi7l3AfUG
+    Nombre: Esfera_R24:Esfera_R24:257900
+    Sala: Puestos
+    Posicion: {x: 44.996082, y: 1.5500001, z: -61.634712}
+    Vecinos: 1400000017000000
+  - GlobalId: 0rnbMfC4L9qhDOi7l3AfUP
+    Nombre: Esfera_R24:Esfera_R24:257893
+    Sala: Puestos
+    Posicion: {x: 44.996082, y: 1.5500001, z: -57.634712}
+    Vecinos: 120000001300000015000000
+  - GlobalId: 0rnbMfC4L9qhDOi7l3AfUY
+    Nombre: Esfera_R24:Esfera_R24:257886
+    Sala: Puestos
+    Posicion: {x: 46.96445, y: 1.5500001, z: -57.634712}
+    Vecinos: 14000000170000001800000023000000
+  - GlobalId: 0rnbMfC4L9qhDOi7l3AfUh
+    Nombre: Esfera_R24:Esfera_R24:257879
+    Sala: Puestos
+    Posicion: {x: 53.39398, y: 1.5500001, z: -59.84858}
+    Vecinos: 1700000019000000
+  - GlobalId: 0rnbMfC4L9qhDOi7l3AfUo
+    Nombre: Esfera_R24:Esfera_R24:257870
+    Sala: Puestos
+    Posicion: {x: 48.99666, y: 1.5500001, z: -60.002136}
+    Vecinos: 130000001500000016000000
+  - GlobalId: 0rnbMfC4L9qhDOi7l3AfUx
+    Nombre: Esfera_R24:Esfera_R24:257863
+    Sala: Puestos
+    Posicion: {x: 48.99666, y: 1.5500001, z: -56.85097}
+    Vecinos: 15000000190000001b000000
+  - GlobalId: 0rnbMfC4L9qhDOi7l3AfUy
+    Nombre: Esfera_R24:Esfera_R24:257856
+    Sala: Puestos
+    Posicion: {x: 53.637627, y: 1.5500001, z: -56.85097}
+    Vecinos: 16000000180000001c000000
+  - GlobalId: 0rnbMfC4L9qhDOi7l3AfV5
+    Nombre: Esfera_R24:Esfera_R24:257849
+    Sala: Puestos
+    Posicion: {x: 48.125042, y: 1.5500001, z: -52.004898}
+    Vecinos: 000000001b000000
+  - GlobalId: 0rnbMfC4L9qhDOi7l3AfVE
+    Nombre: Esfera_R24:Esfera_R24:257842
+    Sala: Puestos
+    Posicion: {x: 49.18666, y: 1.5500001, z: -53.836975}
+    Vecinos: 180000001a0000001c00000023000000
+  - GlobalId: 0rnbMfC4L9qhDOi7l3AfVH
+    Nombre: Esfera_R24:Esfera_R24:257837
+    Sala: Puestos
+    Posicion: {x: 53.517265, y: 1.5500001, z: -53.836975}
+    Vecinos: 190000001b0000001d000000
+  - GlobalId: 0rnbMfC4L9qhDOi7l3AfVQ
+    Nombre: Esfera_R24:Esfera_R24:257830
+    Sala: Puestos
+    Posicion: {x: 53.517265, y: 1.5500001, z: -50.909157}
+    Vecinos: 1c0000001f000000
+  - GlobalId: 0rnbMfC4L9qhDOi7l3AfVX
+    Nombre: Esfera_R24:Esfera_R24:257821
+    Sala: Puestos
+    Posicion: {x: 44.965042, y: 1.5500001, z: -51.917305}
+    Vecinos: 0200000022000000
+  - GlobalId: 0rnbMfC4L9qhDOi7l3AfVg
+    Nombre: Esfera_R24:Esfera_R24:257814
+    Sala: Sala
+    Posicion: {x: 51.39166, y: 1.5500001, z: -49.486427}
+    Vecinos: 1d00000020000000
+  - GlobalId: 0rnbMfC4L9qhDOi7l3AfVn
+    Nombre: Esfera_R24:Esfera_R24:257805
+    Sala: Sala
+    Posicion: {x: 49.62122, y: 1.5500001, z: -49.641323}
+    Vecinos: 00000000030000001f000000
+  - GlobalId: 0rnbMfC4L9qhDOi7l3AfVw
+    Nombre: Esfera_R24:Esfera_R24:257798
+    Sala: "Almac\xE9n"
+    Posicion: {x: 42.806084, y: 1.5500001, z: -47.025238}
+    Vecinos: 020000000500000006000000
+  - GlobalId: 2o_Wt5ZAP07PmvnWR3EDyC
+    Nombre: Esfera_R24:Esfera_R24:260777
+    Sala: Despacho
+    Posicion: {x: 44.134422, y: 1.5500001, z: -54.454296}
+    Vecinos: 120000001e00000023000000
+  - GlobalId: 2o_Wt5ZAP07PmvnWR3EDyL
+    Nombre: Esfera_R24:Esfera_R24:260784
+    Sala: Despacho
+    Posicion: {x: 46.334423, y: 1.5500001, z: -54.454296}
+    Vecinos: 150000001b00000022000000
+  GeneradoEl: 2026-08-08 14:01
+  EscenaOrigen: MainScene
+  Parametros: "RNG, distancia horizontal, tolerancia vertical 2,5 m, longitud m\xE1xima
+    de arista 25 m"
