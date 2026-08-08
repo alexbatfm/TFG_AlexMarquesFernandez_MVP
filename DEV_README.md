@@ -152,6 +152,40 @@ nueva no solicitada para un requisito (paneles de mantenimiento, no control en m
 que un sondeo cada pocos segundos cubre de sobra, con mucha menos superficie que mantener en
 un TFG.
 
+### Dependencias del conector (paso obligatorio, si no el middleware no arranca)
+
+`MySqlConnector` **no es autocontenido**. La build de `netstandard2.1` declara tres
+dependencias en su `.nuspec` que hay que copiar también a `Assets/Plugins/MySqlConnector/`:
+
+| Paquete | Versión |
+|---|---|
+| `Microsoft.Extensions.Logging.Abstractions` | 8.0.2 |
+| `Microsoft.Extensions.DependencyInjection.Abstractions` | 8.0.2 |
+| `System.Diagnostics.DiagnosticSource` | 8.0.1 |
+
+Copiar solo `MySqlConnector.dll` compila sin problemas —el compilador solo necesita los tipos
+que se usan directamente— pero **falla en tiempo de ejecución** al instanciar la conexión:
+
+```
+TypeLoadException: Invalid type MySqlConnector.MySqlConnection for instance field
+DigitalTwin.IoT.MySqlSensorPollingService+<PollOnceAsync>d__33:<connection>5__2
+```
+
+El mensaje despista, porque parece que el problema es el tipo `MySqlConnection` cuando en
+realidad son sus dependencias: el runtime no puede terminar de cargar el tipo porque no
+resuelve los ensamblados a los que hacen referencia sus miembros.
+
+**Cómo obtenerlas:** descargar cada paquete de nuget.org (`https://www.nuget.org/api/v2/package/<nombre>/<versión>`),
+renombrar el `.nupkg` a `.zip`, descomprimir y copiar el DLL de `lib/netstandard2.0/`.
+
+**Requisito relacionado:** en Player Settings > Other Settings, **API Compatibility Level debe
+ser .NET Standard 2.1**. Con ese perfil, Unity ya aporta `System.Memory`, `System.Buffers` y
+`System.Runtime.CompilerServices.Unsafe`, que son dependencias transitivas de las anteriores;
+con un perfil menor habría que añadirlas también a mano.
+
+Si en el futuro aparecen más cascadas de dependencias, la alternativa robusta es instalar
+*NuGetForUnity*, que resuelve el árbol completo automáticamente en vez de ir copiando DLLs.
+
 **Cómo funciona:** `MySqlSensorPollingService` (MonoBehaviour, `DontDestroyOnLoad`) lanza un
 bucle `async/await` (sin `ConfigureAwait(false)`, así todas las continuaciones vuelven al hilo
 principal de Unity y no hace falta ningún lock) que cada `PollIntervalSeconds` (5 s por
