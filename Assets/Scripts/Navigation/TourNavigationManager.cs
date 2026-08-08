@@ -65,8 +65,10 @@ namespace DigitalTwin.Navigation
                  "como el más cercano de todos.")]
         public float ToleranciaVertical = 2.5f;
 
-        [Tooltip("Cuántos puntos se muestran como mucho.")]
-        public int MaxHotspotsShown = 4;
+        [Tooltip("Cuántos puntos se muestran como mucho. Debe ser al menos el grado máximo del " +
+                 "grafo de navegación; con menos, algún nodo ofrecería destinos que la interfaz " +
+                 "no llega a dibujar. Sobre el modelo de referencia ese grado máximo es 5.")]
+        public int MaxHotspotsShown = 5;
 
         [Tooltip("Cuántos se muestran siempre, aunque queden fuera del radio. Evita que un punto " +
                  "aislado deje al usuario sin ninguna salida.")]
