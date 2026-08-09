@@ -134,7 +134,10 @@ namespace DigitalTwin.EditorTools
             "IfcWall", "IfcWallStandardCase", "IfcSlab", "IfcRoof", "IfcColumn", "IfcBeam"
         };
 
-        [MenuItem("Tools/IFC/Generar grafo de navegación")]
+        // Cuelga de Tools y no de Tools/IFC: el submenu IFC agrupa lo que opera sobre el modelo
+        // IFC y sus metadatos, y el grafo de navegacion no lo hace. Se calcula sobre la geometria
+        // ya importada, y seguiria teniendo sentido con un modelo de otra procedencia.
+        [MenuItem("Tools/Generar grafo de navegación")]
         public static void Generar()
         {
             var puntos = RecogerPuntos();

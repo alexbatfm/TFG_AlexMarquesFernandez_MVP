@@ -126,7 +126,7 @@ namespace DigitalTwin.Navigation
         private float _refreshTimer;
 
         /// <summary>
-        /// Grafo precalculado en el Editor (Tools > IFC > Generar grafo de navegacion). Si no
+        /// Grafo precalculado en el Editor (Tools > Generar grafo de navegacion). Si no
         /// existe, el tour sigue funcionando con el criterio de proximidad: el grafo mejora la
         /// navegacion pero no es un requisito para arrancar.
         /// </summary>
@@ -198,7 +198,7 @@ namespace DigitalTwin.Navigation
                 _grafo = null;
                 Debug.LogWarning("[DigitalTwin] No hay grafo de navegacion (Assets/Resources/NavGraph.asset). " +
                                  "Se usara el criterio de proximidad, que funciona pero puede solapar hotspots " +
-                                 "en salas diafanas. Generalo con Tools > IFC > Generar grafo de navegacion.");
+                                 "en salas diafanas. Generalo con Tools > Generar grafo de navegacion.");
                 return;
             }
 
@@ -240,7 +240,7 @@ namespace DigitalTwin.Navigation
             Debug.LogWarning($"[DigitalTwin] {sinDestino} de {_grafo.Nodos.Count} nodos del grafo no " +
                              "corresponden a ningun elemento de la escena. Suele significar que el modelo " +
                              "se ha reimportado con GlobalId distintos: regenera el grafo con " +
-                             "Tools > IFC > Generar grafo de navegacion.");
+                             "Tools > Generar grafo de navegacion.");
         }
 
         /// <summary>
