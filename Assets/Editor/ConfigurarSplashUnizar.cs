@@ -74,11 +74,13 @@ namespace DigitalTwin.EditorTools
             PlayerSettings.SplashScreen.showUnityLogo = true;   // obligatorio con licencia Personal
             PlayerSettings.SplashScreen.drawMode = PlayerSettings.SplashScreen.DrawMode.AllSequential;
             PlayerSettings.SplashScreen.animationMode = PlayerSettings.SplashScreen.AnimationMode.Dolly;
-            PlayerSettings.SplashScreen.unityLogoStyle = PlayerSettings.SplashScreen.UnityLogoStyle.DarkOnLight;
+            PlayerSettings.SplashScreen.unityLogoStyle = PlayerSettings.SplashScreen.UnityLogoStyle.LightOnDark;
 
-            // Fondo claro: el logotipo institucional está pensado sobre blanco y sobre el fondo
-            // oscuro por defecto se pierde por completo.
-            PlayerSettings.SplashScreen.backgroundColor = Color.white;
+            // Fondo negro. La razón es de confort visual: la pantalla de presentación es lo
+            // primero que se ve al ponerse el visor, a menudo en una sala en penumbra y con los
+            // ojos sin adaptar. Un fondo blanco a pantalla completa y a pocos centímetros de la
+            // cara resulta agresivo.
+            PlayerSettings.SplashScreen.backgroundColor = Color.black;
 
             PlayerSettings.SplashScreen.logos = new[]
             {
@@ -87,7 +89,41 @@ namespace DigitalTwin.EditorTools
 
             AssetDatabase.SaveAssets();
             Debug.Log($"[Splash] Pantalla de presentacion configurada con el logotipo institucional " +
-                      $"({SegundosLogo:0.0} s), en secuencia con el de Unity.");
+                      $"({SegundosLogo:0.0} s), en secuencia con el de Unity, sobre fondo negro.");
+
+            AvisarSiElLogoEsOscuro(sprite);
+        }
+
+        /// <summary>
+        /// Sobre fondo negro, un logotipo de trazo oscuro resulta invisible. Como el fichero puede
+        /// cambiarse en cualquier momento por otra version, la comprobacion se hace aqui y no se
+        /// dan por supuestos sus colores.
+        ///
+        /// La solucion correcta no es aclarar el fondo --- el motivo de que sea negro es el confort
+        /// visual dentro del visor --- sino usar la version en negativo del logotipo, que las
+        /// instituciones publican junto a la principal precisamente para fondos oscuros.
+        /// </summary>
+        private static void AvisarSiElLogoEsOscuro(Sprite sprite)
+        {
+            var tex = sprite.texture;
+            if (!tex.isReadable) return;   // sin acceso a los pixeles no se puede comprobar
+
+            double suma = 0; int n = 0;
+            var pixeles = tex.GetPixels32();
+            for (int i = 0; i < pixeles.Length; i += 37)   // muestreo disperso: basta para la media
+            {
+                var p = pixeles[i];
+                if (p.a < 40) continue;                    // el fondo transparente no cuenta
+                suma += (p.r + p.g + p.b) / 3.0;
+                n++;
+            }
+            if (n == 0) return;
+
+            double luminancia = suma / n;
+            if (luminancia < 110)
+                Debug.LogWarning($"[Splash] El logotipo tiene un trazo oscuro (luminancia media " +
+                                  $"{luminancia:0}/255) y el fondo es negro: apenas se vera. Sustituye " +
+                                  $"{RutaLogo} por la version en negativo del logotipo institucional.");
         }
 
         private static bool YaConfigurada()
