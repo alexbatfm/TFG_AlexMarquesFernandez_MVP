@@ -72,6 +72,14 @@ namespace DigitalTwin.Core
 
             IoT.SensorIntegrationBootstrap.TryAttach(index, panel);
 
+            // Menú de pausa y configuración (Escape). Se construye el último a propósito: necesita
+            // localizar TourCameraLook para congelar el giro de cámara mientras está abierto, y se
+            // registra en ClickRouter con una prioridad por encima del resto de la interfaz.
+            // En un visor no se construye: ver la nota de la propia clase.
+            var ajustesGo = new GameObject("~MenuConfiguracion");
+            Object.DontDestroyOnLoad(ajustesGo);
+            ajustesGo.AddComponent<UI.SettingsMenuController>().Initialize(canvas);
+
             _initialized = true;
             Debug.Log("[DigitalTwin] Bootstrap completo: navegación por puntos + selección + panel de metadatos activos.");
         }
