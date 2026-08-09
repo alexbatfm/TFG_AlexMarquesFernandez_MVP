@@ -168,6 +168,7 @@ namespace DigitalTwin.Navigation
 
             CargarGrafo();
             IncorporarNodosDelGrafoQueNoSonEsferas(index);
+            VerificarCoberturaDelGrafo();
             CalcularOrbesPrincipales();
             BuildUI();
 
@@ -207,12 +208,39 @@ namespace DigitalTwin.Navigation
 
             Debug.Log($"[DigitalTwin] Grafo de navegacion cargado: {_grafo.Nodos.Count} nodos, " +
                       $"{_grafo.ContarAristas()} aristas, generado el {_grafo.GeneradoEl}. " +
-                      $"{reconocidos} de {_grafo.Nodos.Count} nodos localizados en la escena.");
+                      $"{reconocidos} de {_grafo.Nodos.Count} nodos corresponden a puntos 'Esfera...'.");
 
-            if (reconocidos < _grafo.Nodos.Count)
-                Debug.LogWarning("[DigitalTwin] Hay nodos del grafo que no corresponden a ningun punto de la " +
-                                 "escena. Suele significar que el modelo se ha reimportado con GlobalId distintos: " +
-                                 "vuelve a generar el grafo.");
+            // El aviso de nodos huerfanos NO puede emitirse aqui. En este punto solo se han
+            // emparejado los puntos "Esfera...", y el grafo contiene ademas puertas y pasos del
+            // modelo, que se dan de alta justo despues en IncorporarNodosDelGrafoQueNoSonEsferas.
+            // Comprobarlo ahora da siempre un falso positivo que invita a regenerar un grafo
+            // que esta bien: con 36 esferas y 18 puertas sobre 54 nodos, saltaba en cada arranque.
+            // La comprobacion real se hace en VerificarCoberturaDelGrafo, ya con todo incorporado.
+        }
+
+        /// <summary>
+        /// Comprueba que todos los nodos del grafo tengan un destino en la escena, una vez
+        /// incorporadas tanto las esferas como las puertas y pasos del modelo.
+        ///
+        /// Solo aqui tiene sentido la comprobacion: un nodo sin destino significa de verdad que
+        /// el grafo se genero contra otra version del modelo, con GlobalId distintos, y entonces
+        /// hay que regenerarlo. Hecha antes de incorporar las puertas, la comprobacion avisaba
+        /// siempre aunque el grafo estuviese perfectamente.
+        /// </summary>
+        private void VerificarCoberturaDelGrafo()
+        {
+            if (_grafo == null) return;
+
+            int sinDestino = 0;
+            foreach (var nodo in _grafo.Nodos)
+                if (!_puntosPorGlobalId.ContainsKey(nodo.GlobalId)) sinDestino++;
+
+            if (sinDestino == 0) return;
+
+            Debug.LogWarning($"[DigitalTwin] {sinDestino} de {_grafo.Nodos.Count} nodos del grafo no " +
+                             "corresponden a ningun elemento de la escena. Suele significar que el modelo " +
+                             "se ha reimportado con GlobalId distintos: regenera el grafo con " +
+                             "Tools > IFC > Generar grafo de navegacion.");
         }
 
         /// <summary>
