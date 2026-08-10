@@ -74,13 +74,16 @@ namespace DigitalTwin.EditorTools
             PlayerSettings.SplashScreen.showUnityLogo = true;   // obligatorio con licencia Personal
             PlayerSettings.SplashScreen.drawMode = PlayerSettings.SplashScreen.DrawMode.AllSequential;
             PlayerSettings.SplashScreen.animationMode = PlayerSettings.SplashScreen.AnimationMode.Dolly;
-            PlayerSettings.SplashScreen.unityLogoStyle = PlayerSettings.SplashScreen.UnityLogoStyle.LightOnDark;
-
-            // Fondo negro. La razón es de confort visual: la pantalla de presentación es lo
-            // primero que se ve al ponerse el visor, a menudo en una sala en penumbra y con los
-            // ojos sin adaptar. Un fondo blanco a pantalla completa y a pocos centímetros de la
-            // cara resulta agresivo.
-            PlayerSettings.SplashScreen.backgroundColor = Color.black;
+            // Fondo blanco, con el logotipo de Unity en su variante oscura para que contraste.
+            //
+            // Se probó también con fondo negro, por confort visual dentro del visor, y se
+            // descartó: el logotipo institucional es de trazo oscuro y sobre negro desaparecía.
+            // La alternativa habría sido conseguir su versión en negativo, y sobre pantalla el
+            // resultado en blanco convence, así que se mantiene. Queda pendiente valorarlo con
+            // el casco puesto: un fondo claro a pantalla completa y a pocos centímetros de los
+            // ojos es más agresivo que en un monitor.
+            PlayerSettings.SplashScreen.unityLogoStyle = PlayerSettings.SplashScreen.UnityLogoStyle.DarkOnLight;
+            PlayerSettings.SplashScreen.backgroundColor = Color.white;
 
             PlayerSettings.SplashScreen.logos = new[]
             {
@@ -95,13 +98,14 @@ namespace DigitalTwin.EditorTools
         }
 
         /// <summary>
-        /// Sobre fondo negro, un logotipo de trazo oscuro resulta invisible. Como el fichero puede
-        /// cambiarse en cualquier momento por otra version, la comprobacion se hace aqui y no se
-        /// dan por supuestos sus colores.
+        /// Comprueba que el logotipo contraste con el fondo. Un trazo oscuro sobre fondo oscuro,
+        /// o claro sobre claro, deja la pantalla de presentacion practicamente vacia sin que nada
+        /// falle: no hay error, no hay aviso del motor, y solo se descubre mirandola.
         ///
-        /// La solucion correcta no es aclarar el fondo --- el motivo de que sea negro es el confort
-        /// visual dentro del visor --- sino usar la version en negativo del logotipo, que las
-        /// instituciones publican junto a la principal precisamente para fondos oscuros.
+        /// Se compara con el fondo real en lugar de dar por supuesto que es blanco, porque
+        /// cualquiera de los dos puede cambiar despues. Si algun dia se pasa el fondo a oscuro,
+        /// hara falta la version en negativo del logotipo, que las instituciones publican junto a
+        /// la principal precisamente para eso.
         /// </summary>
         private static void AvisarSiElLogoEsOscuro(Sprite sprite)
         {
@@ -119,11 +123,16 @@ namespace DigitalTwin.EditorTools
             }
             if (n == 0) return;
 
-            double luminancia = suma / n;
-            if (luminancia < 110)
-                Debug.LogWarning($"[Splash] El logotipo tiene un trazo oscuro (luminancia media " +
-                                  $"{luminancia:0}/255) y el fondo es negro: apenas se vera. Sustituye " +
-                                  $"{RutaLogo} por la version en negativo del logotipo institucional.");
+            double logo = suma / n;
+            var f = PlayerSettings.SplashScreen.backgroundColor;
+            double fondo = (f.r + f.g + f.b) / 3.0 * 255.0;
+
+            // Menos de 60 puntos de diferencia sobre 255 es un contraste insuficiente para leerse.
+            if (System.Math.Abs(logo - fondo) < 60)
+                Debug.LogWarning($"[Splash] El logotipo (luminancia media {logo:0}/255) apenas " +
+                                  $"contrasta con el fondo ({fondo:0}/255): la pantalla de " +
+                                  $"presentacion se vera casi vacia. Cambia el fondo o usa la " +
+                                  $"version en negativo de {RutaLogo}.");
         }
 
         private static bool YaConfigurada()
