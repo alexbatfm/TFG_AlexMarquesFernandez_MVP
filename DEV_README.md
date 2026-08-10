@@ -4,6 +4,17 @@ Este documento registra cómo ha quedado estructurado cada sistema del MVP, a me
 implementa siguiendo el roadmap de 5 fases. Está pensado para que cualquiera (incluida una
 futura sesión de Claude) entienda el diseño sin tener que releer todo el código.
 
+> **Nota de estado (2026-08-10):** este documento describe el diseño de las Fases 1-5 tal como
+> se escribió el 2026-08-08, sin acceso a Editor ni hardware. Desde entonces las Fases 1-4 se
+> han **verificado en ejecución** (Play y build de escritorio compilada) y la Fase 5 ha superado
+> su **hito de humo en el HTC Vive Focus Vision real** (OpenXR inicializa, sesión `FOCUSED`,
+> renderizado estéreo). También hay pulido posterior no descrito aquí (grafo de navegación con
+> puertas, menú de zonas, iluminación solar por georreferenciación, menú de ajustes de
+> escritorio, pantalla de presentación). Las afirmaciones de "sin verificar"/"nunca probado en
+> Play" de las secciones siguientes ya **no son ciertas**. Para el estado real día a día, usa
+> `TFG/docs/roadmap/CHECKLIST-hasta-defensa.md`; este fichero sigue siendo válido como
+> explicación de arquitectura y decisiones de diseño.
+
 Todo el código nuevo vive bajo `Assets/Scripts/`, organizado por namespace/carpeta:
 
 ```
