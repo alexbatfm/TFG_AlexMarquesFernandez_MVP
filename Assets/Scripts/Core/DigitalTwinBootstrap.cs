@@ -20,6 +20,13 @@ namespace DigitalTwin.Core
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         private static void Bootstrap()
         {
+            // Traza incondicional, antes de cualquier salida temprana. Su ausencia en el registro
+            // significa que el metodo no se ha ejecutado en absoluto --- lo que apunta al recorte
+            // del enlazador, no a la logica --- y su presencia indica qué escena esta activa. Sin
+            // ella, "no se inicializa" y "se inicializa y decide no actuar" son indistinguibles.
+            Debug.LogWarning("[DigitalTwin] Punto de entrada de escritorio alcanzado. Escena activa: " +
+                      $"'{UnityEngine.SceneManagement.SceneManager.GetActiveScene().name}'.");
+
             // Los managers se marcan DontDestroyOnLoad; esta guarda evita duplicarlos si la
             // escena se recarga durante la misma ejecución.
             if (_initialized) return;

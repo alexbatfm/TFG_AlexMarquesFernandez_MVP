@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Preservacion de codigo frente al recorte del enlazador (managed stripping).
+
+  POR QUE EXISTE
+
+  Al compilar con IL2CPP, Unity elimina el codigo que no encuentra referenciado. El analisis es
+  estatico, de modo que no ve dos cosas que en este proyecto son esenciales:
+
+  1. Los puntos de entrada marcados con [RuntimeInitializeOnLoadMethod]. Nadie los llama: los
+     invoca el motor por reflexion al cargar la escena.
+
+  2. Los tipos que MySqlConnector resuelve por reflexion. Su carga ya fallo una vez por
+     dependencias ausentes; el recorte reproduce el mismo sintoma por otra via.
+
+  El sintoma es traicionero porque la aplicacion compila, se instala y arranca sin un solo error:
+  simplemente falta comportamiento, y no hay nada en la consola que lo explique.
+
+  ALTERNATIVA DESCARTADA
+
+  Bajar el nivel de recorte en los ajustes del reproductor lo resolveria tambien, pero a costa de
+  aumentar el tamano del paquete y de perder la optimizacion en todo el proyecto para proteger unas
+  pocas clases. Preservar de forma selectiva es mas preciso y deja constancia de que se preserva y
+  por que.
+
+  NOTA SOBRE EL FORMATO
+
+  Cuidado con los comentarios de este fichero: XML prohibe la secuencia de dos guiones seguidos
+  dentro de un comentario. Usarla como guion largo hace que el enlazador falle con un error de XML
+  que no menciona este fichero por su nombre, y la build se detiene en la fase de recorte sin que
+  quede claro por que.
+-->
+<linker>
+
+  <!-- Todo el codigo propio del proyecto. Es pequeno, y el coste de conservarlo entero es menor
+       que el de ir descubriendo una por una que clases hacen falta. -->
+  <assembly fullname="Assembly-CSharp" preserve="all"/>
+
+  <!-- Conector de MySQL y sus dependencias. Resuelven tipos por reflexion, asi que el analisis
+       estatico no puede saber que se usan. -->
+  <assembly fullname="MySqlConnector" preserve="all"/>
+  <assembly fullname="Microsoft.Extensions.Logging.Abstractions" preserve="all"/>
+  <assembly fullname="Microsoft.Extensions.DependencyInjection.Abstractions" preserve="all"/>
+  <assembly fullname="System.Diagnostics.DiagnosticSource" preserve="all"/>
+
+  <!-- Newtonsoft deserializa los metadatos IFC contra tipos que solo se nombran en el JSON. -->
+  <assembly fullname="Newtonsoft.Json" preserve="all"/>
+
+</linker>

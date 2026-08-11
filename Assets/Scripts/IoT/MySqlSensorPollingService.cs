@@ -35,7 +35,31 @@ namespace DigitalTwin.IoT
     public class MySqlSensorPollingService : MonoBehaviour
     {
         [Header("Conexión (ver TFG/utility/informacion_mysql-gemelo-digital.txt)")]
+        [Tooltip("Anfitrión para la versión de escritorio, donde el contenedor corre en la misma " +
+                 "máquina. En el visor se usa HostRemoto: ver la nota de HostEfectivo.")]
         public string Host = "127.0.0.1";
+
+        /// <summary>
+        /// Dirección del equipo que aloja el contenedor, vista desde la red local.
+        ///
+        /// Hace falta porque el visor es un dispositivo Android autónomo: tiene su propia pila de
+        /// red y <c>127.0.0.1</c> se refiere a sí mismo, no al ordenador de desarrollo. El síntoma
+        /// es inequívoco en el registro --- «Unable to connect to any of the specified MySQL
+        /// hosts» contra 127.0.0.1 --- y se confirmó en la primera ejecución en el visor.
+        ///
+        /// <b>Aquí se cambia la dirección.</b> Este componente lo crea
+        /// <see cref="SensorIntegrationBootstrap"/> en tiempo de ejecución, así que no está
+        /// colocado en ninguna escena y su valor no aparece en el Inspector: el único sitio donde
+        /// ajustarlo es esta línea, y hay que recompilar. Se deja así a conciencia, porque una
+        /// pantalla de configuración de red dentro del visor es bastante trabajo para un dato que
+        /// solo cambia al mudarse de red.
+        ///
+        /// Averígualo con <c>ipconfig</c> en el equipo que aloja el contenedor, y recuerda abrir el
+        /// puerto 3306 para conexiones entrantes en el cortafuegos de Windows: sin esa regla la
+        /// conexión se rechaza igual, con el mismo mensaje de error, y es fácil culpar a la IP.
+        /// </summary>
+        public string HostRemoto = "127.0.0.1";
+
         public int Port = 3306;
         public string Database = "periscoopedb";
         public string User = "root";
@@ -64,14 +88,35 @@ namespace DigitalTwin.IoT
         private bool _catalogLoaded;
         private bool _running;
 
+        /// <summary>
+        /// Anfitrión que se usa realmente, decidido en tiempo de ejecución.
+        ///
+        /// La regla es la plataforma y no una preferencia del usuario: en el visor, un bucle local
+        /// nunca puede llegar al contenedor, y en el escritorio la dirección de red local funciona
+        /// pero da un salto innecesario por el adaptador. Resolverlo aquí permite que la misma
+        /// compilación sirva en las dos plataformas, que es lo que evita mantener dos ramas de
+        /// configuración y equivocarse al cambiar de una a otra.
+        /// </summary>
+        public string HostEfectivo
+        {
+            get
+            {
+#if UNITY_ANDROID && !UNITY_EDITOR
+                return string.IsNullOrWhiteSpace(HostRemoto) ? Host : HostRemoto;
+#else
+                return Host;
+#endif
+            }
+        }
+
         private string ConnectionString =>
-            $"Server={Host};Port={Port};User ID={User};Password={Password};Database={Database};" +
+            $"Server={HostEfectivo};Port={Port};User ID={User};Password={Password};Database={Database};" +
             "SslMode=None;AllowPublicKeyRetrieval=True;ConnectionTimeout=5;DefaultCommandTimeout=10;";
 
         private void Start()
         {
             _running = true;
-            Debug.Log($"[DigitalTwin][IoT] Iniciando sondeo contra {Host}:{Port}/{Database} cada {PollIntervalSeconds}s...");
+            Debug.Log($"[DigitalTwin][IoT] Iniciando sondeo contra {HostEfectivo}:{Port}/{Database} cada {PollIntervalSeconds}s...");
             _ = PollLoopAsync();
         }
 
@@ -144,7 +189,7 @@ namespace DigitalTwin.IoT
                 LastError = ex.Message;
                 if (wasConnected || LastSuccessfulPollUtc == default)
                 {
-                    Debug.LogWarning($"[DigitalTwin][IoT] No se ha podido consultar MySQL en {Host}:{Port}: {ex.Message}\n" +
+                    Debug.LogWarning($"[DigitalTwin][IoT] No se ha podido consultar MySQL en {HostEfectivo}:{Port}: {ex.Message}\n" +
                                       "¿Está arrancado el contenedor? -> docker start mysql-gemelo-digital");
                 }
             }
