@@ -53,6 +53,19 @@ namespace DigitalTwin.MR
         /// raycast de interacción a frecuencia de fotograma y no debe reconstruir listas.</summary>
         private readonly HashSet<int> _vecinosDelNodoActual = new HashSet<int>();
 
+        /// <summary>
+        /// Destinos actualmente OFRECIDOS al usuario (los que tienen cartel). Normalmente
+        /// coincide con los vecinos del grafo; cuando ninguno es utilizable entra la salida de
+        /// emergencia (ver RefrescarIndicadores) y este conjunto contiene los sustitutos. El
+        /// viaje valida contra este conjunto: lo que se ofrece se puede pulsar, y nada más.
+        /// </summary>
+        private readonly HashSet<int> _destinosOfrecidos = new HashSet<int>();
+
+        /// <summary>Cuántos destinos garantiza la salida de emergencia. Es el mismo mínimo que
+        /// el criterio de proximidad de escritorio (MinHotspotsAlwaysShown): quedarse sin
+        /// salidas es el único fallo que la navegación no se puede permitir.</summary>
+        private const int MinimoDestinosGarantizados = 3;
+
         public string NombreNodoActual =>
             _grafo != null && _indiceNodoActual >= 0 ? Etiqueta(_indiceNodoActual) : "(ninguno)";
 
@@ -177,6 +190,17 @@ namespace DigitalTwin.MR
             return _vecinosDelNodoActual.Contains(indiceNodo);
         }
 
+        /// <summary>
+        /// ¿Está este nodo entre los destinos que el usuario tiene delante (cartel visible)?
+        /// Es el conjunto que valida el viaje: vecinos del grafo o, si ninguno era utilizable,
+        /// los sustitutos de la salida de emergencia.
+        /// </summary>
+        public bool EsDestinoOfrecido(int indiceNodo)
+        {
+            if (!Disponible || _indiceNodoActual < 0) return false;
+            return _destinosOfrecidos.Contains(indiceNodo);
+        }
+
         /// <summary>¿Corta el rayo el cartel de algún destino alcanzable?</summary>
         public bool TryImpactoIndicador(Ray rayo, out int indiceNodo, out float distancia)
         {
@@ -201,10 +225,11 @@ namespace DigitalTwin.MR
             }
             if (indiceDestino == _indiceNodoActual) return false;
 
-            if (!EsVecinoActual(indiceDestino))
+            if (!EsDestinoOfrecido(indiceDestino))
             {
                 // La imposición del grafo, en la capa de navegación y no solo en la visual:
-                // aunque el rayo alcance la esfera de un punto lejano, sin arista no hay viaje.
+                // aunque el rayo alcance la esfera de un punto lejano, sin arista (ni cartel de
+                // emergencia) no hay viaje.
                 Debug.LogWarning($"[DigitalTwin][AR] Destino '{Etiqueta(indiceDestino)}' no alcanzable " +
                                  $"desde '{Etiqueta(_indiceNodoActual)}' segun el grafo; " +
                                  "desplazamiento rechazado.");
@@ -262,7 +287,6 @@ namespace DigitalTwin.MR
             _vecinosDelNodoActual.Clear();
             foreach (int v in vecinos) _vecinosDelNodoActual.Add(v);
 
-            if (_indicadores == null) return;
             var destinos = new List<MRIndicadoresDestino.Destino>(vecinos.Count);
             int omitidos = 0;
             foreach (int v in vecinos)
@@ -271,15 +295,85 @@ namespace DigitalTwin.MR
                 destinos.Add(new MRIndicadoresDestino.Destino
                 {
                     IndiceNodo = v,
-                    Posicion = PosicionDeNodo(v),
+                    Posicion = PosicionDeCartel(v),
                     Etiqueta = Etiqueta(v)
                 });
             }
 
-            _indicadores.Mostrar(destinos);
-            Debug.LogWarning($"[DigitalTwin][AR] Indicadores: {destinos.Count} destinos alcanzables " +
+            // SALIDA GARANTIZADA. Un nodo sin ningún destino utilizable deja al usuario
+            // encerrado, que es el único fallo que la navegación no se puede permitir (ocurrió
+            // en la prueba del 2026-08-13: un punto de baño cuyos únicos vecinos eran puertas
+            // con el cartel hundido en la propia hoja). Si tras resolver vecinos no queda nada
+            // que ofrecer, se ofrecen los nodos utilizables más cercanos, exactamente el mismo
+            // seguro que el mínimo del criterio de proximidad de escritorio. Nunca en silencio.
+            if (destinos.Count == 0)
+            {
+                var sustitutos = NodosMasCercanos(MinimoDestinosGarantizados);
+                foreach (int s in sustitutos)
+                {
+                    destinos.Add(new MRIndicadoresDestino.Destino
+                    {
+                        IndiceNodo = s,
+                        Posicion = PosicionDeCartel(s),
+                        Etiqueta = Etiqueta(s)
+                    });
+                }
+                Debug.LogWarning($"[DigitalTwin][AR] SALIDA DE EMERGENCIA en '{Etiqueta(_indiceNodoActual)}': " +
+                                 $"grado {vecinos.Count} en el grafo, {omitidos} sin elemento en " +
+                                 $"escena, 0 destinos utilizables. Se ofrecen los {destinos.Count} " +
+                                 "nodos mas cercanos para que el usuario nunca quede encerrado.");
+            }
+
+            _destinosOfrecidos.Clear();
+            foreach (var d in destinos) _destinosOfrecidos.Add(d.IndiceNodo);
+
+            if (_indicadores != null) _indicadores.Mostrar(destinos);
+            Debug.LogWarning($"[DigitalTwin][AR] Indicadores: {destinos.Count} destinos ofrecidos " +
                              $"desde '{Etiqueta(_indiceNodoActual)}'" +
                              (omitidos > 0 ? $" ({omitidos} nodos del grafo sin elemento en escena)." : "."));
+        }
+
+        /// <summary>
+        /// Los K nodos utilizables más cercanos al actual (por distancia viva), excluyéndolo.
+        /// Solo se usa como salida de emergencia; la navegación normal es el grafo.
+        /// </summary>
+        private List<int> NodosMasCercanos(int k)
+        {
+            var candidatos = new List<(float dist, int indice)>();
+            Vector3 desde = PosicionDeNodo(_indiceNodoActual);
+            for (int i = 0; i < _grafo.Nodos.Count; i++)
+            {
+                if (i == _indiceNodoActual || _metaPorNodo[i] == null) continue;
+                candidatos.Add((Vector3.Distance(desde, PosicionDeNodo(i)), i));
+            }
+            candidatos.Sort((a, b) => a.dist.CompareTo(b.dist));
+
+            var resultado = new List<int>(k);
+            for (int i = 0; i < candidatos.Count && resultado.Count < k; i++)
+                resultado.Add(candidatos[i].indice);
+            return resultado;
+        }
+
+        /// <summary>
+        /// Punto de anclaje del CARTEL de un nodo, que no siempre es su punto de viaje.
+        ///
+        /// Para las esferas coinciden. Para las puertas no: el punto de viaje es el centro del
+        /// volumen de la hoja (por ahí se pasa), pero un cartel colgado ahí queda HUNDIDO EN LA
+        /// PROPIA HOJA y la prueba de profundidad lo oculta — es la causa de que en la prueba
+        /// del 2026-08-13 un punto de baño rodeado solo de puertas pareciera no tener salidas.
+        /// El cartel de una puerta se cuelga sobre su dintel (tope del volumen), donde flota
+        /// libre y se ve desde ambos lados.
+        /// </summary>
+        private Vector3 PosicionDeCartel(int indiceNodo)
+        {
+            var meta = MetaDe(indiceNodo);
+            if (meta != null && meta.ifcType == "IfcDoor")
+            {
+                var r = meta.GetComponentInChildren<Renderer>();
+                if (r != null)
+                    return new Vector3(r.bounds.center.x, r.bounds.max.y + 0.05f, r.bounds.center.z);
+            }
+            return PosicionDeNodo(indiceNodo);
         }
 
         // ------------------------------------------------------------------ tránsito ---------

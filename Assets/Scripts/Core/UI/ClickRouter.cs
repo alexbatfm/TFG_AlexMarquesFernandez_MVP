@@ -110,6 +110,49 @@ namespace DigitalTwin.UI
             return false;
         }
 
+        /// <summary>
+        /// Vía de pulsación para la versión inmersiva: invoca el target bajo un PUNTO DE MUNDO
+        /// (el impacto del rayo del mando sobre el panel), sin puntero de pantalla.
+        ///
+        /// Por qué existe. Todos los controles del panel de metadatos (botón de cerrar,
+        /// cabeceras desplegables de los Psets) ya están registrados aquí, pero este router solo
+        /// escuchaba al ratón y a la pantalla táctil: en el visor no hay ninguno de los dos, así
+        /// que la ficha era un cartel mudo — el gatillo se consumía sobre el panel sin hacer
+        /// nada. Con esta llamada, la versión inmersiva reutiliza EXACTAMENTE los mismos
+        /// registros y callbacks que el escritorio: un solo comportamiento, dos formas de
+        /// apuntar.
+        ///
+        /// La prueba de pertenencia se hace en el espacio local de cada rect
+        /// (InverseTransformPoint + Rect.Contains), que funciona igual para lienzos de mundo
+        /// anidados; la coordenada z local se ignora porque el punto viene de impactar el plano
+        /// del propio lienzo.
+        /// </summary>
+        public bool InvocarPulsacionEnPuntoMundo(Vector3 puntoMundo)
+        {
+            ClickTarget mejor = null;
+            for (int i = 0; i < _targets.Count; i++)
+            {
+                var t = _targets[i];
+                if (t.Rect == null || !t.Rect.gameObject.activeInHierarchy) continue;
+                if (t.IsActive != null && !t.IsActive()) continue;
+
+                Vector3 local = t.Rect.InverseTransformPoint(puntoMundo);
+                if (!t.Rect.rect.Contains(new Vector2(local.x, local.y))) continue;
+                if (mejor == null || t.SortOrder > mejor.SortOrder) mejor = t;
+            }
+
+            if (mejor == null)
+            {
+                // No es un error: el rayo ha dado en una zona del panel sin control (el fondo,
+                // un texto). Se registra a nivel informativo de diagnóstico para distinguir
+                // "pulsé y no era un control" de "pulsé y el router no me vio".
+                return false;
+            }
+
+            mejor.OnClick?.Invoke();
+            return true;
+        }
+
         private bool _pulsacionSobreUI;
         private int _framePulsacion = -1;
 

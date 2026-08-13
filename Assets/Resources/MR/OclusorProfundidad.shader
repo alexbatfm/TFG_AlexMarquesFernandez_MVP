@@ -32,7 +32,15 @@ Shader "DigitalTwin/OclusorProfundidad"
             Name "OclusorProfundidad"
             ZWrite On
             ZTest LEqual
+            // Tres mecanismos independientes para NO escribir color, tras la prueba del
+            // 2026-08-13 en la que el modo anclado se vio negro con los sensores delante
+            // (cuadro compatible con oclusores pintando opaco): ColorMask 0 descarta la
+            // escritura, Blend Zero One deja el destino intacto aunque la escritura ocurriera
+            // (resultado = 0*fuente + 1*destino, tambien en alfa), y el fragmento devuelve
+            // (0,0,0,0) por si ambos fallaran en algun controlador. Si aun asi se pinta, el
+            // culpable no es este fichero y las trazas de MROcclusionService lo acotan.
             ColorMask 0
+            Blend Zero One, Zero One
             Cull Back
 
             HLSLPROGRAM

@@ -60,6 +60,37 @@ namespace DigitalTwin.Metadata
         }
 
         /// <summary>
+        /// Hace que el panel ocupe TODO el ancho del lienzo, en lugar de la columna lateral de
+        /// 440 px. Lo llama solo la versión inmersiva.
+        ///
+        /// Por qué: en escritorio el lienzo es la pantalla completa y el panel es una barra
+        /// lateral; ahí 440 px está bien. En el visor el lienzo entero mide 0,58 m de ancho
+        /// (la cifra que se verificó como legible), así que dejar el panel en 440 de 900 px lo
+        /// reducía a 0,28 m reales: la mitad del tamaño decidido, texto a la mitad de tamaño
+        /// angular, y de ahí buena parte de la borrosidad percibida — los glifos quedaban por
+        /// debajo del píxel físico del visor. Con el ancho completo, el mismo tamaño de fuente
+        /// ocupa el doble de píxeles en pantalla sin tocar ninguna otra medida del layout.
+        /// </summary>
+        public void UsarAnchoCompleto()
+        {
+            if (_panelRoot == null) return;
+            _panelRoot.anchorMin = new Vector2(0, 0);
+            _panelRoot.anchorMax = new Vector2(1, 1);
+            _panelRoot.pivot = new Vector2(0.5f, 0.5f);
+            _panelRoot.anchoredPosition = Vector2.zero;
+            _panelRoot.sizeDelta = Vector2.zero;
+        }
+
+        /// <summary>
+        /// Desplaza la lista de propiedades (positivo baja). Vía de scroll de la versión
+        /// inmersiva: el joystick del mando empuja aquí mientras el rayo señala el panel.
+        /// </summary>
+        public void DesplazarContenido(float delta)
+        {
+            if (_scrollArea != null) _scrollArea.Desplazar(delta);
+        }
+
+        /// <summary>
         /// Ajusta la opacidad del fondo del panel dejando el texto intacto.
         ///
         /// Se expone como método y no como un simple color configurable porque la transparencia

@@ -160,6 +160,25 @@ namespace DigitalTwin.MR
         }
 
         /// <summary>
+        /// Componente vertical del joystick de la mano activa, en [-1, 1] con una zona muerta
+        /// pequeña. Se usa para desplazar el contenido del panel de metadatos mientras el rayo
+        /// lo señala; fuera de esa situación nadie lo consulta, así que no interfiere con nada.
+        /// </summary>
+        public float JoystickVertical()
+        {
+            var mano = _manoActiva != null && _manoActiva.Valida ? _manoActiva : PrimeraManoValida();
+            if (mano == null) return 0f;
+
+            var dispositivo = InputDevices.GetDeviceAtXRNode(mano.Nodo);
+            if (!dispositivo.TryGetFeatureValue(CommonUsages.primary2DAxis, out Vector2 eje))
+                return 0f;
+
+            const float ZonaMuerta = 0.25f;
+            if (Mathf.Abs(eje.y) < ZonaMuerta) return 0f;
+            return eje.y;
+        }
+
+        /// <summary>
         /// Acorta el rayo hasta el punto alcanzado y lo tiñe, para que se vea dónde termina. Sin
         /// esto, el rayo atraviesa la geometría y no hay forma de saber qué se está señalando.
         /// </summary>

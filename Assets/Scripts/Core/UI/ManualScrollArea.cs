@@ -22,6 +22,21 @@ namespace DigitalTwin.UI
             Content.anchoredPosition = pos;
         }
 
+        /// <summary>
+        /// Desplaza el contenido una cantidad en unidades de layout, acotada a los límites.
+        /// Es la vía de scroll de la versión inmersiva: allí no hay rueda de ratón, así que el
+        /// controlador de interacción empuja este valor desde el joystick del mando mientras el
+        /// rayo señala el panel. Positivo baja por el contenido.
+        /// </summary>
+        public void Desplazar(float delta)
+        {
+            if (Viewport == null || Content == null) return;
+            float maxScroll = Mathf.Max(0f, Content.rect.height - Viewport.rect.height);
+            var pos = Content.anchoredPosition;
+            pos.y = Mathf.Clamp(pos.y + delta, 0f, maxScroll);
+            Content.anchoredPosition = pos;
+        }
+
         /// <summary>Reajusta la posición de scroll actual a los límites válidos. Útil justo
         /// después de reconstruir el contenido (p.ej. al expandir/colapsar un Pset), cuando la
         /// altura del contenido cambia y el scroll anterior podría quedar fuera de rango.</summary>

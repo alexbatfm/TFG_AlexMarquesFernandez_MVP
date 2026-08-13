@@ -197,6 +197,10 @@ namespace DigitalTwin.MR
             Object.DontDestroyOnLoad(panelGo);
             var panel = panelGo.AddComponent<MetadataPanelController>();
             panel.Initialize(canvas);
+            // En el visor la ficha ocupa el lienzo entero: dejarla en la columna de 440 px del
+            // escritorio la reducía a la mitad del ancho decidido (0,28 m de los 0,58) y el
+            // texto quedaba por debajo del píxel físico — la borrosidad de la prueba del 13-08.
+            panel.UsarAnchoCompleto();
             // Fondo translúcido: da sensación de espacio sin restar legibilidad al texto, que
             // sigue a opacidad completa (ver SetOpacidadFondo). Ante el usuario y a 1,3 m ocupa
             // bastante campo de visión, y en modo anclado lo que hay detrás es el edificio real.
@@ -289,7 +293,7 @@ namespace DigitalTwin.MR
                 var interaccionGo = new GameObject("~InteraccionAR");
                 interaccionGo.transform.SetParent(desplazamientoCamara, false);
                 var interaccion = interaccionGo.AddComponent<MRInteractionController>();
-                interaccion.Initialize(rig, panel, colocador, navegador);
+                interaccion.Initialize(rig, panel, colocador, navegador, index);
             }
             else
             {

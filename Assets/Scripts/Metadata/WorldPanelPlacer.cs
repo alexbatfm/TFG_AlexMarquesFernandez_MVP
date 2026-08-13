@@ -40,8 +40,13 @@ namespace DigitalTwin.Metadata
         [Header("Colocación respecto al usuario")]
         [Tooltip("Distancia del panel al usuario, en metros. Por debajo de 0,8 m la disparidad " +
                  "entre convergencia y enfoque resulta molesta; por encima de 2 m el texto pierde " +
-                 "legibilidad.")]
-        public float DistanciaAlUsuario = 1.3f;
+                 "legibilidad. Bajada de 1,3 a 1,1 tras la prueba del 2026-08-13 (texto borroso): " +
+                 "a 1,1 m el lienzo de 0,58 m sube de 25 a 30 grados de ancho angular y cada " +
+                 "glifo gana un 18 % de pixeles fisicos. La altura relativa esta ACOPLADA a esta " +
+                 "distancia: con -0,40 m y media altura de lienzo de 0,354 m, el borde superior " +
+                 "queda a (0,40-0,354)/1,1 = 2,4 grados bajo la linea de vision, todavia fuera " +
+                 "de ella (a 1,3 m eran 2,0). Acercar MAS exige recalcular ese margen.")]
+        public float DistanciaAlUsuario = 1.1f;
 
         [Tooltip("Desplazamiento vertical respecto a la altura de los ojos, en metros. El panel " +
                  "entero debe quedar POR DEBAJO de la línea de visión, no simplemente escorado.")]
