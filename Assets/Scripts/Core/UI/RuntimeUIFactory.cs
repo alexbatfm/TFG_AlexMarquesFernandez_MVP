@@ -61,6 +61,19 @@ namespace DigitalTwin.UI
             float escala = anchoMetros / anchoPx;
             rt.localScale = new Vector3(escala, escala, escala);
 
+            // Densidad de rasterizado del texto. Sin un CanvasScaler, un lienzo en espacio de
+            // mundo rasteriza a un píxel por unidad de layout, y como aquí una unidad equivale a
+            // 0,6 mm de mundo, el resultado en un visor es texto visiblemente borroso: la pantalla
+            // dedica a cada letra bastantes más píxeles de los que se han generado.
+            //
+            // Subirlo multiplica la resolución del atlas de fuente sin alterar el diseño ni una
+            // sola coordenada, que es justo lo que se busca: el problema es de resolución, no de
+            // maquetación. Cuatro es un compromiso; más allá de seis el coste en memoria de
+            // textura deja de compensar sobre hardware autónomo.
+            var escalador = go.AddComponent<UnityEngine.UI.CanvasScaler>();
+            escalador.dynamicPixelsPerUnit = 4f;
+            escalador.referencePixelsPerUnit = 100f;
+
             Object.DontDestroyOnLoad(go);
             return canvas;
         }

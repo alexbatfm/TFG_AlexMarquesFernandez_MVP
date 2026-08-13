@@ -41,7 +41,7 @@ namespace DigitalTwin.UI
             { "muy lenta", "lenta", "normal", "rápida", "muy rápida" };
 
         private RectTransform _raiz;
-        private Text _valorSensibilidad, _valorPantalla;
+        private Text _valorSensibilidad, _valorPantalla, _valorSolar;
         private Text _textoSalir;
         private Image _fondoSalir;
         private Text _pista;
@@ -101,9 +101,11 @@ namespace DigitalTwin.UI
             panel.anchorMin = panel.anchorMax = new Vector2(0.5f, 0.5f);
             panel.pivot = new Vector2(0.5f, 0.5f);
             panel.anchoredPosition = Vector2.zero;
-            // Título + subtítulo + 2 ajustes con ayuda + 2 acciones.
+            // Título + subtítulo + 3 ajustes con ayuda + 2 acciones. La ayuda de la iluminación
+            // solar ocupa dos líneas, así que se reserva una altura extra para ella.
             panel.sizeDelta = new Vector2(AnchoPanel,
-                Margen * 2 + 30f + 22f + 2 * (AltoFila + AltoAyuda + 8f) + 2 * (AltoFila + 6f));
+                Margen * 2 + 30f + 22f + 3 * (AltoFila + AltoAyuda + 8f) + AltoAyuda
+                + 2 * (AltoFila + 6f));
 
             var fondo = RuntimeUIFactory.CreatePanel(panel, "Fondo", new Color(0.07f, 0.09f, 0.13f, 0.97f));
             RuntimeUIFactory.StretchToParent((RectTransform)fondo.transform);
@@ -122,11 +124,16 @@ namespace DigitalTwin.UI
                 "Alterna entre pantalla completa y ventana.",
                 AlternarPantalla, OrdenBase + 2);
 
+            _valorSolar = Ajuste(panel, ref y, "Iluminación solar",
+                "Orienta el sol según la hora real y las coordenadas del modelo IFC. El edificio no " +
+                "tiene luz artificial: de noche queda a oscuras.",
+                AlternarSolar, OrdenBase + 3);
+
             Accion(panel, ref y, "Volver a la escena", new Color(0.14f, 0.26f, 0.19f, 1f),
-                   Cerrar, OrdenBase + 3);
+                   Cerrar, OrdenBase + 4);
 
             _fondoSalir = Accion(panel, ref y, "Salir de la aplicación",
-                                 new Color(0.30f, 0.13f, 0.13f, 1f), PulsarSalir, OrdenBase + 4,
+                                 new Color(0.30f, 0.13f, 0.13f, 1f), PulsarSalir, OrdenBase + 5,
                                  out _textoSalir);
 
             Refrescar();
@@ -302,6 +309,18 @@ namespace DigitalTwin.UI
             return 2;
         }
 
+        /// <summary>
+        /// Conmuta la sincronización solar. Puede no existir el control --- por ejemplo si la
+        /// escena no tiene luz direccional ---, y en ese caso la fila lo indica en lugar de fallar.
+        /// </summary>
+        private void AlternarSolar()
+        {
+            var ctrl = DigitalTwin.Visual.SolarLightingController.Instancia;
+            if (ctrl == null) return;
+            ctrl.Alternar();
+            Refrescar();
+        }
+
         private void AlternarPantalla()
         {
             _pantallaCompleta = !_pantallaCompleta;
@@ -335,6 +354,12 @@ namespace DigitalTwin.UI
 
             if (_valorPantalla != null)
                 _valorPantalla.text = (_pantallaCompleta ? "pantalla completa" : "ventana") + "   ▸";
+
+            if (_valorSolar != null)
+            {
+                var ctrl = DigitalTwin.Visual.SolarLightingController.Instancia;
+                _valorSolar.text = ctrl == null ? "no disponible" : ctrl.Descripcion + "   ▸";
+            }
 
             if (_textoSalir != null)
                 _textoSalir.text = _confirmandoSalida

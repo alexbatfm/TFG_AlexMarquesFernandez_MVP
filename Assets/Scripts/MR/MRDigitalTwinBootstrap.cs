@@ -25,16 +25,32 @@ namespace DigitalTwin.MR
     public static class MRDigitalTwinBootstrap
     {
         /// <summary>
-        /// Nombre de la escena de Realidad Mixta. Debe coincidir con el fichero
-        /// Assets/Scenes/MRScene.unity que se creará en el Editor.
+        /// Nombre de la escena de Realidad Aumentada.
         /// </summary>
-        public const string NombreEscenaMR = "MRScene";
+        public const string NombreEscenaMR = "ARScene";
+
+        /// <summary>
+        /// Nombres aceptados, además del anterior.
+        ///
+        /// Existe esta lista por una razón concreta: la escena se llamó primero <c>MRScene</c> y
+        /// pasó a <c>ARScene</c> al fijarse la terminología del trabajo. Como la comprobación era
+        /// una comparación exacta contra una constante, el simple renombrado desactivó en silencio
+        /// todo el arranque de Realidad Aumentada --- y, peor, dejó que corriera en su lugar el de
+        /// escritorio, que montó su recorrido y su control de cámara de ratón dentro del visor.
+        /// No hubo ningún error: solo una aplicación que se comportaba de forma extraña.
+        ///
+        /// Aceptar varios nombres evita que un cambio de nomenclatura vuelva a romper el arranque.
+        /// </summary>
+        private static readonly string[] NombresAceptados = { "ARScene", "MRScene" };
 
         private static bool _initialized;
 
         public static bool EsEscenaMR()
         {
-            return SceneManager.GetActiveScene().name == NombreEscenaMR;
+            string activa = SceneManager.GetActiveScene().name;
+            foreach (var nombre in NombresAceptados)
+                if (activa == nombre) return true;
+            return false;
         }
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
@@ -61,6 +77,12 @@ namespace DigitalTwin.MR
             var index = SceneModelIndex.Build();
             ColliderBootstrapper.Setup(index);
 
+            // La transparencia se prepara antes que el anclaje y el modelo. El orden importa
+            // poco para el resultado, pero mucho para diagnosticar: si algo falla al crear la
+            // capa, el aviso aparece antes que las trazas de indexado y no queda sepultado
+            // entre quinientas líneas de registro.
+            MRPassthroughController.Crear();
+
             var anclajeGo = new GameObject("~MRAnchorService");
             Object.DontDestroyOnLoad(anclajeGo);
             var anclaje = anclajeGo.AddComponent<MRAnchorService>();
@@ -72,7 +94,16 @@ namespace DigitalTwin.MR
             // escritorio; lo único que cambia es dónde vive el panel. Aquí el canvas es de tipo
             // world-space: en un visor, una interfaz pegada a la cara resulta incómoda y rompe la
             // sensación de estar dentro del edificio.
-            var canvas = DigitalTwin.UI.RuntimeUIFactory.CreateWorldCanvas("DigitalTwinCanvasMR");
+            // 0,58 m de ancho, un cinco por ciento sobre los 0,55 iniciales: verificado en el
+            // visor que a esa distancia el tamaño se lee cómodamente.
+            //
+            // El tamaño no se reduce para despejar la mirada; eso se resuelve bajando el panel
+            // (ver WorldPanelPlacer.AlturaRelativa). Las dos cosas están acopladas: al crecer el
+            // ancho crece el alto en la misma proporción, y con él la altura a la que hay que
+            // colocarlo para que el borde superior no invada la línea de visión. Si se vuelve a
+            // tocar este valor, hay que revisar el otro.
+            var canvas = DigitalTwin.UI.RuntimeUIFactory.CreateWorldCanvas("DigitalTwinCanvasMR",
+                                                                           anchoMetros: 0.58f);
 
             var panelGo = new GameObject("~MetadataPanelMR");
             Object.DontDestroyOnLoad(panelGo);
@@ -80,7 +111,11 @@ namespace DigitalTwin.MR
             panel.Initialize(canvas);
             // Fondo translúcido: da sensación de espacio sin restar legibilidad al texto, que
             // sigue a opacidad completa (ver SetOpacidadFondo).
-            panel.SetOpacidadFondo(0.7f);
+            // Más translúcido que en la primera versión inmersiva. Con el panel colocado junto al
+            // objeto, a distancia, tapaba poco; ante el usuario y a 1,3 m ocupa bastante campo de
+            // visión, y en modo anclado lo que hay detrás es el edificio real. El texto se
+            // mantiene a opacidad completa (ver SetOpacidadFondo): lo que se aligera es el fondo.
+            panel.SetOpacidadFondo(0.55f);
 
             // Identificación del elemento seleccionado, por triple vía: caja de aristas y tinte
             // sobre el objeto, panel colocado a su lado, y línea que une panel y objeto. Cada
@@ -106,6 +141,9 @@ namespace DigitalTwin.MR
                 resaltador.Limpiar();
                 colocador.Seguir(null);
             };
+
+            // Mismo criterio que en escritorio: disponible pero apagada por defecto.
+            Visual.SolarLightingController.Crear();
 
             IoT.SensorIntegrationBootstrap.TryAttach(index, panel);
 
@@ -137,7 +175,7 @@ namespace DigitalTwin.MR
                 var interaccionGo = new GameObject("~InteraccionAR");
                 interaccionGo.transform.SetParent(desplazamientoCamara, false);
                 var interaccion = interaccionGo.AddComponent<MRInteractionController>();
-                interaccion.Initialize(rig, panel, origenXR);
+                interaccion.Initialize(rig, panel, origenXR, colocador);
             }
 
             anclaje.OnEstadoCambiado += estado =>

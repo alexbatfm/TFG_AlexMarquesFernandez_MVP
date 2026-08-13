@@ -77,6 +77,11 @@ namespace DigitalTwin.Core
             panel.OnElementShown += meta => resaltador.Resaltar(meta != null ? meta.transform : null);
             panel.OnPanelHidden += resaltador.Limpiar;
 
+            // Iluminacion solar por georreferenciacion del IFC. Se monta desactivada: el modelo
+            // no tiene luz artificial, asi que con la hora real de noche el interior queda a
+            // oscuras. Se activa desde el menu de ajustes.
+            Visual.SolarLightingController.Crear();
+
             IoT.SensorIntegrationBootstrap.TryAttach(index, panel);
 
             // Menú de pausa y configuración (Escape). Se construye el último a propósito: necesita

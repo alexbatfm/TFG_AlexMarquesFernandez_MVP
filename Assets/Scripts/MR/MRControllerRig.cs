@@ -102,15 +102,11 @@ namespace DigitalTwin.MR
         /// </summary>
         private static Material CrearMaterialDeRayo()
         {
-            string[] candidatos = { "Universal Render Pipeline/Unlit", "Unlit/Color", "Sprites/Default" };
-            foreach (var nombre in candidatos)
-            {
-                var shader = Shader.Find(nombre);
-                if (shader != null) return new Material(shader);
-            }
-            Debug.LogWarning("[DigitalTwin][AR] No se ha encontrado ningún sombreador para el rayo " +
-                             "de los mandos; se verá con el material de reemplazo.");
-            return new Material(Shader.Find("Hidden/InternalErrorShader"));
+            // Delegado en el ayudante comun: la busqueda de sombreador por nombre falla en
+            // compilacion si no estan incluidos, y aqui devolvia un material de reemplazo creado a
+            // su vez con un Shader.Find que tambien podia ser null. Ahora, si no hay sombreador,
+            // se devuelve null y el rayo no se dibuja, pero los mandos siguen funcionando.
+            return DigitalTwin.Core.RuntimeMaterials.CrearSinIluminacion(ColorNeutro);
         }
 
         private void Update()

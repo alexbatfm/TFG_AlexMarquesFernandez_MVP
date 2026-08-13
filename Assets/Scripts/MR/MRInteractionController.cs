@@ -37,6 +37,12 @@ namespace DigitalTwin.MR
 
         private MRControllerRig _rig;
         private MetadataPanelController _panel;
+
+        /// <summary>
+        /// Colocador del panel en el espacio. Se necesita aquí para poder preguntarle si el rayo
+        /// corta la ficha antes de resolver la selección contra el edificio.
+        /// </summary>
+        private DigitalTwin.Metadata.WorldPanelPlacer _colocadorPanel;
         private Transform _origenXR;
         private Camera _camara;
 
@@ -48,44 +54,105 @@ namespace DigitalTwin.MR
         /// </summary>
         private Renderer _esferaActualOculta;
 
-        public void Initialize(MRControllerRig rig, MetadataPanelController panel, Transform origenXR)
+        /// <summary>
+        /// Cierto mientras dura una transicion. Bloquea la interaccion durante el trayecto: un
+        /// disparo a mitad de camino encadenaria dos desplazamientos y dejaria al usuario en un
+        /// sitio que no ha elegido.
+        /// </summary>
+        private bool _enTransito;
+
+        public void Initialize(MRControllerRig rig, MetadataPanelController panel, Transform origenXR,
+                               DigitalTwin.Metadata.WorldPanelPlacer colocadorPanel = null)
         {
             _rig = rig;
             _panel = panel;
             _origenXR = origenXR;
+            _colocadorPanel = colocadorPanel;
             _camara = Camera.main;
         }
 
         private void Update()
         {
-            if (_rig == null || _camara == null) return;
+            if (_rig == null || _camara == null || _enTransito) return;
             if (!_rig.TryGetRayo(out Ray rayo)) { _rig.MostrarImpacto(0f, false); return; }
 
-            bool hayImpacto = Physics.Raycast(rayo, out RaycastHit hit,
-                                              ElementSelector.MaxRayDistance,
-                                              ColliderBootstrapper.SelectionMask(),
-                                              QueryTriggerInteraction.Ignore);
-
-            IfcMetadata meta = hayImpacto ? hit.collider.GetComponentInParent<IfcMetadata>() : null;
-            bool esPuntoNavegacion = meta != null && meta.ifcType == SceneModelIndex.NavPointIfcType;
-
-            // Realimentación continua: el rayo se acorta hasta el impacto y cambia de color cuando
-            // hay algo con lo que se puede interactuar. Sin esto no se sabe qué se está apuntando
-            // hasta después de disparar.
-            _rig.MostrarImpacto(hayImpacto ? hit.distance : 0f, meta != null);
-
-            if (!_rig.GatilloPulsadoEsteFrame()) return;
-
-            if (esPuntoNavegacion)
+            // Se recogen TODOS los impactos del rayo, no solo el primero.
+            //
+            // El motivo es de uso, y salió al probarlo en el visor: apuntando a un punto de
+            // navegación que está detrás de una cristalera o de una barandilla, el rayo se detenía
+            // en el obstáculo y no había forma de desplazarse allí, pese a que el destino se veía
+            // perfectamente. Recorrer todos los impactos permite dar prioridad al destino aunque
+            // haya algo delante.
+            //
+            // La realimentación visual, en cambio, sigue mostrando el PRIMER impacto: el rayo debe
+            // terminar donde el usuario ve que termina, o la sensación de puntería se rompe.
+            // La interfaz se consulta ANTES que el mundo. El panel de metadatos flota ante el
+            // usuario, entre él y el edificio, así que en cuanto está abierto se interpone en
+            // casi cualquier línea de tiro. Sin esta comprobación el rayo lo atraviesa —un lienzo
+            // no participa en la física— y pulsar sobre la ficha seleccionaba el objeto que
+            // hubiera detrás: la interfaz parecía muerta y además cambiaba la selección sola.
+            if (_colocadorPanel != null && _colocadorPanel.RayoImpactaPanel(rayo, out float distPanel))
             {
-                Desplazar(meta.transform.position);
-                OcultarEsferaDeDestino(meta);
+                _rig.MostrarImpacto(distPanel, true);
+                // El gatillo se consume aquí. Todavía no hay controles dentro del panel a los que
+                // dirigirlo, pero no hacer nada es el comportamiento correcto: pulsar sobre una
+                // ficha nunca debe actuar sobre lo que queda detrás de ella.
                 return;
             }
 
-            if (meta != null)
+            var impactos = Physics.RaycastAll(rayo, ElementSelector.MaxRayDistance,
+                                              ColliderBootstrapper.SelectionMask(),
+                                              QueryTriggerInteraction.Ignore);
+
+            IfcMetadata primero = null;      // lo que se está señalando visualmente
+            IfcMetadata puntoNavegacion = null;   // el destino más cercano, aunque esté detrás
+            float distanciaPrimero = 0f;
+
+            if (impactos != null && impactos.Length > 0)
             {
-                _panel.Show(meta);
+                System.Array.Sort(impactos, (a, b) => a.distance.CompareTo(b.distance));
+
+                foreach (var h in impactos)
+                {
+                    var m = h.collider.GetComponentInParent<IfcMetadata>();
+                    if (m == null) continue;
+
+                    if (primero == null) { primero = m; distanciaPrimero = h.distance; }
+
+                    if (puntoNavegacion == null && m.ifcType == SceneModelIndex.NavPointIfcType)
+                        puntoNavegacion = m;
+                }
+            }
+
+            _rig.MostrarImpacto(distanciaPrimero, primero != null || puntoNavegacion != null);
+
+            if (!_rig.GatilloPulsadoEsteFrame()) return;
+
+            // El desplazamiento gana sobre la consulta de metadatos: si en la línea de tiro hay un
+            // punto de navegación, la intención casi siempre es ir allí. Consultar la ficha de un
+            // muro es algo que se hace apuntando a un muro, no a través de él.
+            if (puntoNavegacion != null)
+            {
+                IniciarDesplazamiento(puntoNavegacion);
+                return;
+            }
+
+            if (primero != null)
+            {
+                // Segundo disparo sobre el elemento ya consultado: se cierra la ficha.
+                //
+                // Alterna en lugar de reabrir porque el panel viaja con el usuario. Mientras
+                // estaba anclado junto al objeto, una ficha olvidada se quedaba atrás y dejaba de
+                // molestar sola; ahora acompaña al operario por todo el edificio, así que hace
+                // falta una forma explícita de retirarla. Se elige el propio elemento como
+                // interruptor, y no un botón aparte, porque es el gesto que el usuario ya conoce
+                // —acaba de hacerlo para abrirla— y no exige descubrir nada nuevo.
+                //
+                // La comparación es por referencia y no por GlobalId a propósito: dos instancias
+                // distintas del mismo tipo son elementos distintos del edificio, y consultar una
+                // después de otra debe cambiar la ficha, no cerrarla.
+                if (_panel.Current == primero) _panel.Hide();
+                else _panel.Show(primero);
                 return;
             }
 
@@ -93,24 +160,74 @@ namespace DigitalTwin.MR
         }
 
         /// <summary>
-        /// Lleva la vista hasta el destino moviendo el origen de realidad extendida, no la cámara.
+        /// Inicia el desplazamiento hacia un punto de navegación, con transición continua.
         ///
-        /// La cámara está gobernada por el seguimiento de pose: cualquier valor que se le escriba lo
-        /// sobrescribe el sistema en el fotograma siguiente. El desplazamiento tiene que aplicarse
-        /// al origen del que cuelga, y por la diferencia entre donde está la cámara y donde se la
-        /// quiere llevar; no basta con colocar el origen en el destino, porque el usuario puede
-        /// haberse desplazado caminando respecto a él.
+        /// Por qué continua y no instantánea. En la versión de escritorio el desplazamiento
+        /// interpola la posición precisamente para conservar la orientación espacial del operario
+        /// dentro del edificio: ver moverse el entorno indica hacia dónde se ha ido uno. En un
+        /// visor ese argumento pesa aún más, porque el usuario no tiene ninguna otra referencia
+        /// para reconstruir su posición. Un salto instantáneo obliga a reorientarse desde cero en
+        /// cada movimiento.
+        ///
+        /// Se acota la duración para trayectos cortos: recorrer dos metros con la misma duración
+        /// que treinta resulta pesado, y a distancias muy cortas un salto instantáneo no
+        /// desorienta.
         /// </summary>
-        private void Desplazar(Vector3 destino)
+        private void IniciarDesplazamiento(IfcMetadata destino)
         {
             if (_origenXR == null) return;
 
-            float alturaDestino = destino.y > 0.01f ? destino.y : AlturaVistaPorDefecto;
-            var objetivo = new Vector3(destino.x, alturaDestino, destino.z);
+            Vector3 pos = destino.transform.position;
+            float alturaDestino = pos.y > 0.01f ? pos.y : AlturaVistaPorDefecto;
+            var objetivo = new Vector3(pos.x, alturaDestino, pos.z);
 
-            _origenXR.position += objetivo - _camara.transform.position;
+            OcultarEsferaDeDestino(destino);
+            StartCoroutine(DesplazarSuave(objetivo));
+        }
 
-            Debug.Log($"[DigitalTwin][AR] Desplazamiento a punto de navegacion en {objetivo}.");
+        private System.Collections.IEnumerator DesplazarSuave(Vector3 objetivo)
+        {
+            _enTransito = true;
+
+            Vector3 desplazamientoTotal = objetivo - _camara.transform.position;
+            float distancia = desplazamientoTotal.magnitude;
+
+            // Por debajo de este umbral la transición no aporta orientación y solo hace esperar.
+            const float DistanciaMinimaParaAnimar = 1.5f;
+            float duracion = distancia < DistanciaMinimaParaAnimar
+                ? 0f
+                : Mathf.Clamp(distancia * 0.05f, 0.35f, 1.1f);
+
+            Debug.Log($"[DigitalTwin][AR] Desplazamiento a punto de navegacion en {objetivo} " +
+                      $"({distancia:0.0} m, {duracion:0.00} s).");
+
+            if (duracion <= 0f)
+            {
+                _origenXR.position += desplazamientoTotal;
+                _enTransito = false;
+                yield break;
+            }
+
+            Vector3 origenInicial = _origenXR.position;
+            // Se recalcula el desplazamiento contra la posicion inicial del origen, no contra la
+            // camara fotograma a fotograma: si el usuario mueve la cabeza durante la transicion, no
+            // debe alterar el destino.
+            Vector3 origenFinal = origenInicial + desplazamientoTotal;
+
+            float t = 0f;
+            while (t < 1f)
+            {
+                t += Time.deltaTime / duracion;
+                // Suavizado en la entrada y la salida. Un movimiento a velocidad constante que
+                // arranca y se detiene de golpe resulta brusco en un visor, y es una de las causas
+                // conocidas de malestar en desplazamientos inmersivos.
+                float s = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(t));
+                _origenXR.position = Vector3.Lerp(origenInicial, origenFinal, s);
+                yield return null;
+            }
+
+            _origenXR.position = origenFinal;
+            _enTransito = false;
         }
 
         /// <summary>

@@ -124,10 +124,33 @@ namespace DigitalTwin.Core
                 }
             }
 
+            // Los puntos de navegación son la tercera familia de geometría no representable: son
+            // esferas colocadas durante el modelado como referencia espacial, no elementos
+            // construidos. Se ocultan aquí, y no en el gestor de navegación de escritorio como se
+            // hacía antes, porque ese gestor no existe en la versión de Realidad Aumentada y el
+            // resultado era que allí las 36 esferas aparecían a tamaño real en mitad del edificio.
+            //
+            // Solo se desactiva el Renderer, nunca el Collider: ambas versiones los usan como
+            // destino de selección, la de escritorio por pulsación y la inmersiva por rayo del
+            // mando. Desactivar el objeto entero los volvería inalcanzables.
+            int marcadores = 0;
+            foreach (var meta in index.NavPoints)
+            {
+                if (meta == null) continue;
+                foreach (var r in meta.GetComponentsInChildren<Renderer>(true))
+                {
+                    if (r == null || !yaVistos.Add(r)) continue;
+                    r.enabled = false;
+                    marcadores++;
+                }
+            }
+            ocultados += marcadores;
+
             if (ocultados > 0)
                 Debug.Log($"[DigitalTwin] {ocultados} mallas ocultadas por no representar geometría real " +
-                          $"del edificio ({index.Spaces.Count} volúmenes de espacio y " +
-                          $"{index.TypeDefinitions.Count} definiciones de tipo). Sus metadatos siguen " +
+                          $"del edificio ({index.Spaces.Count} volúmenes de espacio, " +
+                          $"{index.TypeDefinitions.Count} definiciones de tipo y " +
+                          $"{index.NavPoints.Count} marcadores de navegación). Sus metadatos siguen " +
                           $"disponibles: los de IfcSpace sostienen la relación sensor-sala.");
         }
 

@@ -76,11 +76,13 @@ namespace DigitalTwin.Metadata
 
             // Shader sin iluminación: la caja debe verse igual bajo cualquier luz, y en MR el
             // passthrough no aporta iluminación a la geometría virtual.
-            var shader = Shader.Find("Universal Render Pipeline/Unlit") ?? Shader.Find("Unlit/Color");
-            var mat = new Material(shader);
-            mat.SetColor(IdBaseColor, ColorResaltado);
-            mat.SetColor(IdColor, ColorResaltado);
-            _caja.material = mat;
+            // Antes se hacia new Material(Shader.Find(...)) directamente. En una compilacion
+            // Shader.Find devuelve null para sombreadores no incluidos, y el constructor lanzaba
+            // ArgumentNullException, que abortaba el arranque entero de Realidad Aumentada. Ahora
+            // la creacion no puede lanzar: si no hay sombreador, este adorno simplemente no se
+            // dibuja. Ver DigitalTwin.Core.RuntimeMaterials.
+            var mat = DigitalTwin.Core.RuntimeMaterials.CrearSinIluminacion(ColorResaltado);
+            if (mat != null) _caja.material = mat;
 
             _caja.useWorldSpace = true;
             _caja.loop = false;
