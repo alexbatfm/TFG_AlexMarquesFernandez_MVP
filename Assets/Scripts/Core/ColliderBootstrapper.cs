@@ -161,9 +161,57 @@ namespace DigitalTwin.Core
             return Physics.DefaultRaycastLayers & ~(1 << NavPointLayer);
         }
 
-        /// <summary>Máscara de física para el raycast de selección de elementos (Fase 2): todas las capas de física.</summary>
+        /// <summary>
+        /// Cierto cuando los puntos de navegación deben quedar fuera de la selección por rayo.
+        /// Lo activa el modo anclado de Realidad Aumentada: allí no existe el desplazamiento por
+        /// nodos, las esferas no se dibujan, y un marcador invisible que intercepta el rayo haría
+        /// que apuntar al vacío seleccionara algo que el usuario no puede ver. En escritorio y en
+        /// navegación por nodos nadie lo activa, así que su comportamiento no cambia.
+        /// </summary>
+        private static bool _excluirPuntosDeNavegacionDeSeleccion;
+
+        /// <summary>
+        /// Excluye los marcadores de navegación de la máscara de selección (modo anclado).
+        /// Si la capa dedicada no existe, cae a desactivar sus colisionadores, que consigue lo
+        /// mismo por otra vía; ambas decisiones quedan en el registro.
+        /// </summary>
+        public static void ExcluirPuntosDeNavegacionDeLaSeleccion(SceneModelIndex index)
+        {
+            _excluirPuntosDeNavegacionDeSeleccion = true;
+
+            if (NavPointLayer >= 0)
+            {
+                Debug.LogWarning("[DigitalTwin] Mascara de seleccion: puntos de navegacion " +
+                                 "excluidos (capa " + NavPointLayerName + ").");
+                return;
+            }
+
+            int desactivados = 0;
+            if (index != null)
+            {
+                foreach (var meta in index.NavPoints)
+                {
+                    if (meta == null) continue;
+                    foreach (var col in meta.GetComponentsInChildren<Collider>(true))
+                    {
+                        col.enabled = false;
+                        desactivados++;
+                    }
+                }
+            }
+            Debug.LogWarning($"[DigitalTwin] Mascara de seleccion: no existe la capa " +
+                             $"{NavPointLayerName}, asi que se desactivan {desactivados} " +
+                             "colisionadores de marcadores para excluirlos de la seleccion.");
+        }
+
+        /// <summary>
+        /// Máscara de física para el raycast de selección de elementos (Fase 2): todas las capas
+        /// de física salvo, en modo anclado, la de los puntos de navegación (ver arriba).
+        /// </summary>
         public static int SelectionMask()
         {
+            if (_excluirPuntosDeNavegacionDeSeleccion && NavPointLayer >= 0)
+                return Physics.AllLayers & ~(1 << NavPointLayer);
             return Physics.AllLayers;
         }
     }

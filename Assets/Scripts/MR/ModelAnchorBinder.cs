@@ -134,7 +134,7 @@ namespace DigitalTwin.MR
             _raizModelo.position += pose.position - _puntoReferencia.position;
 
             EstaVinculado = true;
-            Debug.Log($"[DigitalTwin][MR] Modelo anclado usando '{_metaReferencia.ifcName}' como referencia " +
+            Debug.LogWarning($"[DigitalTwin][MR] Modelo anclado usando '{_metaReferencia.ifcName}' como referencia " +
                       $"(GlobalId {_metaReferencia.globalId}). Desviación residual: " +
                       $"{Vector3.Distance(_puntoReferencia.position, pose.position):F4} m.");
         }

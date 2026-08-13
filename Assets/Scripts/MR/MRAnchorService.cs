@@ -168,7 +168,7 @@ namespace DigitalTwin.MR
             XrResult res = AnchorManager.EnumeratePersistedAnchorNames(out string[] nombres);
             if (res != XrResult.XR_SUCCESS || nombres == null || Array.IndexOf(nombres, PersistedAnchorName) < 0)
             {
-                Debug.Log("[DigitalTwin][MR] No hay anclaje guardado de una sesión anterior; " +
+                Debug.LogWarning("[DigitalTwin][MR] No hay anclaje guardado de una sesión anterior; " +
                           "hay que colocar el modelo sobre el edificio.");
                 CambiarEstado(EstadoAnclaje.EsperandoColocacion);
                 return;
@@ -221,7 +221,7 @@ namespace DigitalTwin.MR
             tarea.AutoCompleteTask.ContinueWith(_ => EncolarEnHiloPrincipal(() =>
             {
                 if (tarea.Result == XrResult.XR_SUCCESS)
-                    Debug.Log("[DigitalTwin][MR] Anclaje guardado; en la próxima ejecución se restaurará solo.");
+                    Debug.LogWarning("[DigitalTwin][MR] Anclaje guardado; en la próxima ejecución se restaurará solo.");
                 else
                     Debug.LogWarning($"[DigitalTwin][MR] El anclaje no se ha podido guardar ({tarea.Result}); " +
                                      "funcionará en esta sesión pero habrá que recolocarlo en la siguiente.");
@@ -254,7 +254,7 @@ namespace DigitalTwin.MR
                 return;
             }
 
-            Debug.Log($"[DigitalTwin][MR] {motivo}: posición {pose.position}.");
+            Debug.LogWarning($"[DigitalTwin][MR] {motivo}: posición {pose.position}.");
             CambiarEstado(EstadoAnclaje.Anclado);
             OnAnclado?.Invoke(pose);
         }

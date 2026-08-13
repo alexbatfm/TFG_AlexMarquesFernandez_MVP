@@ -362,7 +362,13 @@ namespace DigitalTwin.Navigation
             return false;
         }
 
-        private static string BuildDisplayName(IfcMetadata meta)
+        /// <summary>
+        /// Nombre con el que un nodo se presenta al usuario. Público porque la versión de
+        /// Realidad Aumentada etiqueta sus indicadores de destino con exactamente el mismo
+        /// texto: dos rótulos distintos para el mismo punto romperían el reconocimiento entre
+        /// versiones.
+        /// </summary>
+        public static string BuildDisplayName(IfcMetadata meta)
         {
             string room = meta.GetValue("Otros", "LOC_Localizacion4");
 
@@ -502,6 +508,12 @@ namespace DigitalTwin.Navigation
         /// <summary>
         /// Vecinos del punto actual segun el grafo precalculado. Devuelve null si el grafo no
         /// cubre este punto, para que quien llama recurra al criterio de proximidad.
+        ///
+        /// La definición de qué es alcanzable NO vive aquí sino en <see cref="NavReachability"/>,
+        /// compartida con la versión de Realidad Aumentada: una sola implementación para los dos
+        /// arranques. Este método conserva solo lo presentacional: traducir índices del grafo a
+        /// puntos de la escena, ordenarlos por cercanía y acotarlos al pool de indicadores. El
+        /// resultado es el mismo que producía el bucle anterior (misma lista, mismo orden).
         /// </summary>
         private List<NavPointData> SeleccionarPorGrafo()
         {
@@ -511,9 +523,8 @@ namespace DigitalTwin.Navigation
             Vector3 origen = _current.Pos;
             var vecinos = new List<NavPointData>();
 
-            foreach (int v in _grafo.Nodos[idx].Vecinos)
+            foreach (int v in NavReachability.VecinosAlcanzables(_grafo, idx))
             {
-                if (v < 0 || v >= _grafo.Nodos.Count) continue;
                 if (_puntosPorGlobalId.TryGetValue(_grafo.Nodos[v].GlobalId, out var punto) && punto != _current)
                     vecinos.Add(punto);
             }

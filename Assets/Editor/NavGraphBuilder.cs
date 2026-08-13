@@ -100,39 +100,17 @@ namespace DigitalTwin.EditorTools
         /// </summary>
         private const bool UsarPuertasComoNodos = true;
 
-        /// <summary>
-        /// Pasos practicables: atravesarlos es lo que hace una persona al ir de una estancia a
-        /// otra, no un atajo imposible.
-        /// </summary>
-        private static readonly string[] TiposDePaso =
-        {
-            "IfcDoor", "IfcOpeningElement", "IfcStair", "IfcStairFlight", "IfcRamp"
-        };
-
-        /// <summary>
-        /// Cerramientos transparentes: ventanas, mamparas y muro cortina con sus montantes y
-        /// paneles.
-        ///
-        /// Ocupan un escalón intermedio propio, y no el de los muros, por una razón que tiene que
-        /// ver con la orientación del usuario y no con la geometría: a través del vidrio se ve el
-        /// destino. Un salto que cruza una mampara resulta comprensible -se sabe adónde se va-
-        /// mientras que uno que atraviesa un tabique opaco parece que el sistema falla. Cruzarlos
-        /// no es lo ideal, porque físicamente no se puede, pero es preferible a atravesar fábrica.
-        ///
-        /// Se incluyen IfcMember e IfcPlate porque en este modelo son los montantes y los paneles
-        /// de la fachada acristalada: un rayo que impacta en ellos está, en la práctica, cruzando
-        /// el muro cortina.
-        /// </summary>
-        private static readonly string[] TiposTransparentes =
-        {
-            "IfcWindow", "IfcCurtainWall", "IfcPlate", "IfcMember"
-        };
-
-        /// <summary>Cerramientos opacos: delimitan el espacio y no dejan ver al otro lado.</summary>
-        private static readonly string[] TiposDeCerramiento =
-        {
-            "IfcWall", "IfcWallStandardCase", "IfcSlab", "IfcRoof", "IfcColumn", "IfcBeam"
-        };
+        // Las familias de tipos (pasos practicables, cerramientos transparentes, cerramientos
+        // opacos) vivían aquí como arrays privados. Desde el 2026-08-13 son
+        // DigitalTwin.Core.IfcClasificacion, en el ensamblado de ejecución: el modo anclado de
+        // Realidad Aumentada necesita exactamente la misma distinción para decidir qué geometría
+        // ocluye, y este fichero pertenece al ensamblado del Editor, que no existe en el
+        // reproductor. Las cadenas y la semántica de comparación son las mismas, de modo que un
+        // grafo regenerado sale idéntico.
+        //
+        // El razonamiento original de cada familia (por qué el vidrio ocupa un escalón propio,
+        // por qué IfcMember e IfcPlate cuentan como fachada acristalada) está documentado en
+        // IfcClasificacion.
 
         // Cuelga de Tools y no de Tools/IFC: el submenu IFC agrupa lo que opera sobre el modelo
         // IFC y sus metadatos, y el grafo de navegacion no lo hace. Se calcula sobre la geometria
@@ -312,23 +290,17 @@ namespace DigitalTwin.EditorTools
                     if (meta != null && meta.ifcType == SceneModelIndex.NavPointIfcType) continue;
 
                     string tipo = meta != null ? meta.ifcType : null;
-                    if (EsDeTipo(tipo, TiposDePaso))             { pasos++;   penalizacion += PenalizacionPaso; }
-                    else if (EsDeTipo(tipo, TiposTransparentes)) { vidrios++; penalizacion += PenalizacionVidrio; }
-                    else if (EsDeTipo(tipo, TiposDeCerramiento)) { muros++;   penalizacion += PenalizacionMuro; }
-                    else                                          { otros++;   penalizacion += PenalizacionOtro; }
+                    if (IfcClasificacion.EsDeTipo(tipo, IfcClasificacion.TiposDePaso))             { pasos++;   penalizacion += PenalizacionPaso; }
+                    else if (IfcClasificacion.EsDeTipo(tipo, IfcClasificacion.TiposTransparentes)) { vidrios++; penalizacion += PenalizacionVidrio; }
+                    else if (IfcClasificacion.EsDeTipo(tipo, IfcClasificacion.TiposDeCerramiento)) { muros++;   penalizacion += PenalizacionMuro; }
+                    else                                                                            { otros++;   penalizacion += PenalizacionOtro; }
                 }
             }
 
             return DistHorizontal(a.Pos, b.Pos) + penalizacion;
         }
 
-        private static bool EsDeTipo(string ifcType, string[] familia)
-        {
-            if (string.IsNullOrEmpty(ifcType)) return false;
-            foreach (var t in familia)
-                if (ifcType == t || ifcType.StartsWith(t)) return true;
-            return false;
-        }
+        // EsDeTipo se ha movido a IfcClasificacion junto con las familias (ver arriba).
 
         // Nota sobre la altura del trazado, que costo un diagnostico erroneo:
         //

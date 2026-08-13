@@ -1,3 +1,4 @@
+using System.Collections;
 using DigitalTwin.Core;
 using DigitalTwin.Metadata;
 using UnityEngine;
@@ -6,16 +7,27 @@ using UnityEngine.SceneManagement;
 namespace DigitalTwin.MR
 {
     /// <summary>
-    /// Fase 5 - Punto de entrada del modo de Realidad Mixta, equivalente a
+    /// Fase 5 - Punto de entrada del modo de Realidad Aumentada, equivalente a
     /// <see cref="DigitalTwinBootstrap"/> pero para la escena del visor.
     ///
     /// Se mantiene el mismo criterio que en las fases anteriores: todo se construye por código
     /// al arrancar, sin colocar objetos a mano en el fichero de escena.
     ///
-    /// Diferencia clave con el modo escritorio: allí la cámara puede indexar y recorrer el
-    /// modelo nada más cargar la escena, porque el modelo ya está donde tiene que estar. Aquí
-    /// el modelo no tiene una posición válida hasta que el anclaje espacial queda establecido,
-    /// así que el orden es: indexar -> esperar anclaje -> colocar modelo -> activar interacción.
+    /// EL ARRANQUE ES EN DOS ETAPAS desde el 2026-08-13. La etapa A prepara lo mínimo para poder
+    /// preguntar: índice del modelo, colisionadores, transparencia y mandos. Con la transparencia
+    /// ya activa se muestra el selector de modo (<see cref="MRModeSelector"/>): modo anclado
+    /// —en obra, modelo superpuesto al edificio real, desplazamiento andando— o navegación por
+    /// nodos —en oficina, revisión remota—. Solo entonces la etapa B monta el gemelo digital
+    /// según el modo elegido. No son dos ajustes del mismo programa sino dos programas (cambian
+    /// entrada, fondo, papel de la geometría y colisionadores), por eso la elección es al
+    /// arrancar y no un conmutador en caliente; ver docs/roadmap/DISENO-modo-anclado.md.
+    ///
+    /// SE DIFIERE DENTRO DE ARScene; NO HAY ESCENA NUEVA. Una escena de menú obligaría a ampliar
+    /// el filtro por nombre de escena y a mantenerla en Build Settings, y ese filtro es
+    /// exactamente el mecanismo que ya costó un bloque de trabajo cuando MRScene pasó a llamarse
+    /// ARScene y la constante quedó sin actualizar. El coste asumido es que el modelo se carga
+    /// antes de preguntar; la elección aparece unos segundos después de ponerse el visor, una
+    /// vez por sesión.
     ///
     /// Convivencia con el modo escritorio: ambos bootstraps se autoejecutan al cargar
     /// cualquier escena, así que cada uno comprueba si le toca actuar según el nombre de la
@@ -44,6 +56,7 @@ namespace DigitalTwin.MR
         private static readonly string[] NombresAceptados = { "ARScene", "MRScene" };
 
         private static bool _initialized;
+        private static bool _gemeloMontado;
 
         public static bool EsEscenaMR()
         {
@@ -74,21 +87,96 @@ namespace DigitalTwin.MR
                 return;
             }
 
+            // --- Etapa A: lo imprescindible para poder preguntar -------------------------------
+
             var index = SceneModelIndex.Build();
             ColliderBootstrapper.Setup(index);
 
-            // La transparencia se prepara antes que el anclaje y el modelo. El orden importa
-            // poco para el resultado, pero mucho para diagnosticar: si algo falla al crear la
-            // capa, el aviso aparece antes que las trazas de indexado y no queda sepultado
-            // entre quinientas líneas de registro.
+            // Resumen del índice a nivel de aviso: la línea detallada de SceneModelIndex es un
+            // mensaje informativo y las compilaciones que no son de desarrollo lo filtran del
+            // registro del dispositivo.
+            Debug.LogWarning($"[DigitalTwin][AR] Indice del modelo: {index.AllElements.Count} " +
+                             $"elementos, {index.NavPoints.Count} puntos de navegacion, " +
+                             $"{index.Sensors.Count} sensores.");
+
+            // La transparencia se prepara antes que el resto. El orden importa poco para el
+            // resultado, pero mucho para diagnosticar: si algo falla al crear la capa, el aviso
+            // aparece antes que las trazas de montaje y no queda sepultado.
             MRPassthroughController.Crear();
 
-            var anclajeGo = new GameObject("~MRAnchorService");
-            Object.DontDestroyOnLoad(anclajeGo);
-            var anclaje = anclajeGo.AddComponent<MRAnchorService>();
+            // Los anclajes de los mandos cuelgan del desplazamiento de camara, no de la raiz de la
+            // escena: las poses que entrega el sistema estan en el espacio del origen de realidad
+            // extendida, y colgarlas de la raiz haria que los mandos se despegaran de las manos en
+            // cuanto el origen se moviera, por ejemplo al desplazarse a un punto de navegacion.
+            Transform desplazamientoCamara = Camera.main.transform.parent;
+            Transform origenXR = desplazamientoCamara != null ? desplazamientoCamara.parent : null;
 
-            var binder = anclajeGo.AddComponent<ModelAnchorBinder>();
-            binder.Initialize(index, anclaje);
+            if (desplazamientoCamara == null || origenXR == null)
+            {
+                // Sin la jerarquía del rig no hay mandos, y sin mandos no se puede elegir modo.
+                // Antes que dejar al usuario ante un selector inoperante, se monta directamente
+                // la navegación por nodos —el modo que funciona sin anclaje— dejando constancia.
+                Debug.LogError("[DigitalTwin][AR] La camara no cuelga de la jerarquia esperada " +
+                               "(origen de realidad extendida > desplazamiento de camara > camara). " +
+                               "Sin mandos no hay selector de modo: se monta navegacion por nodos " +
+                               "directamente. Revisa el rig de la escena.");
+                MontarGemelo(ModoAR.NavegacionPorNodos, index, null, null, null);
+                _initialized = true;
+                return;
+            }
+
+            var rigGo = new GameObject("~MandosAR");
+            rigGo.transform.SetParent(desplazamientoCamara, false);
+            var rig = rigGo.AddComponent<MRControllerRig>();
+            rig.Initialize(desplazamientoCamara);
+
+            var arranqueGo = new GameObject("~ArranqueDiferidoAR");
+            Object.DontDestroyOnLoad(arranqueGo);
+            var secuenciador = arranqueGo.AddComponent<MRBootSequencer>();
+            secuenciador.Iniciar(index, rig, desplazamientoCamara, origenXR);
+
+            _initialized = true;
+        }
+
+        /// <summary>
+        /// Etapa B: montaje del gemelo digital según el modo elegido. Todo lo que en la versión
+        /// de escritorio construye su bootstrap se construye aquí, más las piezas propias del
+        /// visor. Se ejecuta una sola vez.
+        /// </summary>
+        internal static void MontarGemelo(ModoAR modo, SceneModelIndex index, MRControllerRig rig,
+                                          Transform desplazamientoCamara, Transform origenXR)
+        {
+            if (_gemeloMontado)
+            {
+                Debug.LogWarning("[DigitalTwin][AR] MontarGemelo llamado dos veces; se ignora.");
+                return;
+            }
+            _gemeloMontado = true;
+
+            Debug.LogWarning($"[DigitalTwin][AR] Montaje del gemelo digital iniciado (modo {modo}).");
+
+            // --- Anclaje espacial: SOLO en modo anclado ---------------------------------------
+            // En navegación por nodos un anclaje persistido de una sesión anterior movería el
+            // edificio entero bajo los pies del usuario a mitad de recorrido, que es exactamente
+            // lo contrario de lo que ese modo promete (el modelo quieto y el usuario saltando
+            // entre nodos).
+            if (modo == ModoAR.Anclado)
+            {
+                var anclajeGo = new GameObject("~MRAnchorService");
+                Object.DontDestroyOnLoad(anclajeGo);
+                var anclaje = anclajeGo.AddComponent<MRAnchorService>();
+
+                var binder = anclajeGo.AddComponent<ModelAnchorBinder>();
+                binder.Initialize(index, anclaje);
+
+                anclaje.OnEstadoCambiado += estado =>
+                    Debug.LogWarning($"[DigitalTwin][MR] Estado del anclaje: {estado}.");
+            }
+            else
+            {
+                Debug.LogWarning("[DigitalTwin][AR] Anclaje espacial no aplicable en navegacion " +
+                                 "por nodos: el modelo permanece en su pose de autor.");
+            }
 
             // El panel de metadatos y el middleware IoT reutilizan la misma implementación que en
             // escritorio; lo único que cambia es dónde vive el panel. Aquí el canvas es de tipo
@@ -110,17 +198,13 @@ namespace DigitalTwin.MR
             var panel = panelGo.AddComponent<MetadataPanelController>();
             panel.Initialize(canvas);
             // Fondo translúcido: da sensación de espacio sin restar legibilidad al texto, que
-            // sigue a opacidad completa (ver SetOpacidadFondo).
-            // Más translúcido que en la primera versión inmersiva. Con el panel colocado junto al
-            // objeto, a distancia, tapaba poco; ante el usuario y a 1,3 m ocupa bastante campo de
-            // visión, y en modo anclado lo que hay detrás es el edificio real. El texto se
-            // mantiene a opacidad completa (ver SetOpacidadFondo): lo que se aligera es el fondo.
+            // sigue a opacidad completa (ver SetOpacidadFondo). Ante el usuario y a 1,3 m ocupa
+            // bastante campo de visión, y en modo anclado lo que hay detrás es el edificio real.
             panel.SetOpacidadFondo(0.55f);
 
             // Identificación del elemento seleccionado, por triple vía: caja de aristas y tinte
-            // sobre el objeto, panel colocado a su lado, y línea que une panel y objeto. Cada
-            // mecanismo cubre un caso en el que los otros fallan (objeto tapado, elementos
-            // repetidos cerca, objeto lejano).
+            // sobre el objeto, panel colocado ante el usuario, y línea que une panel y objeto.
+            // Cada mecanismo cubre un caso en el que los otros fallan.
             var resaltadoGo = new GameObject("~SelectionHighlighterMR");
             Object.DontDestroyOnLoad(resaltadoGo);
             var resaltador = resaltadoGo.AddComponent<SelectionHighlighter>();
@@ -147,43 +231,150 @@ namespace DigitalTwin.MR
 
             IoT.SensorIntegrationBootstrap.TryAttach(index, panel);
 
-            // --- Mandos e interaccion ---------------------------------------------------------
-            // Sin esto la escena era solo contemplativa: el modelo se veia y se podia caminar
-            // alrededor, pero no habia forma de senalar nada, de modo que el panel de metadatos
-            // existia sin que nada pudiera pedirle que mostrase un elemento.
-            //
-            // Los anclajes de los mandos cuelgan del desplazamiento de camara, no de la raiz de la
-            // escena: las poses que entrega el sistema estan en el espacio del origen de realidad
-            // extendida, y colgarlas de la raiz haria que los mandos se despegaran de las manos en
-            // cuanto el origen se moviera, por ejemplo al desplazarse a un punto de navegacion.
-            Transform desplazamientoCamara = Camera.main.transform.parent;
-            Transform origenXR = desplazamientoCamara != null ? desplazamientoCamara.parent : null;
+            // --- Lo específico de cada modo ---------------------------------------------------
 
-            if (desplazamientoCamara == null || origenXR == null)
+            MRNodeNavigator navegador = null;
+
+            if (modo == ModoAR.NavegacionPorNodos)
             {
-                Debug.LogWarning("[DigitalTwin][AR] La camara no cuelga de la jerarquia esperada " +
-                                 "(origen de realidad extendida > desplazamiento de camara > camara). " +
-                                 "No se crean los mandos: revisa el rig de la escena.");
+                // La transparencia se apaga al entrar: la revisión remota se hace desde la
+                // oficina, y el vídeo de la sala real detrás del modelo solo confunde. No se
+                // persiste la preferencia: al próximo arranque el selector vuelve a mostrarse
+                // sobre transparencia.
+                if (MRPassthroughController.Instancia != null)
+                    MRPassthroughController.Instancia.Aplicar(false);
+
+                if (origenXR == null)
+                {
+                    // Vía de emergencia sin jerarquía de rig: sin origen de realidad extendida
+                    // no hay a qué aplicar los desplazamientos, así que la navegación queda
+                    // contemplativa. Ya quedó registrado el error de jerarquía más arriba.
+                    Debug.LogError("[DigitalTwin][AR] Sin origen de realidad extendida no se " +
+                                   "monta la navegacion por nodos: no habria a que aplicar los " +
+                                   "desplazamientos.");
+                }
+                else
+                {
+                    var indicadoresGo = new GameObject("~IndicadoresDestinoAR");
+                    Object.DontDestroyOnLoad(indicadoresGo);
+                    var indicadores = indicadoresGo.AddComponent<MRIndicadoresDestino>();
+                    indicadores.Initialize(Camera.main);
+
+                    var navegadorGo = new GameObject("~NavegacionPorNodosAR");
+                    Object.DontDestroyOnLoad(navegadorGo);
+                    navegador = navegadorGo.AddComponent<MRNodeNavigator>();
+                    navegador.Initialize(origenXR, Camera.main, index, indicadores);
+                    navegador.ColocarEnNodoInicial();
+                }
             }
             else
             {
-                var rigGo = new GameObject("~MandosAR");
-                rigGo.transform.SetParent(desplazamientoCamara, false);
-                var rig = rigGo.AddComponent<MRControllerRig>();
-                rig.Initialize(desplazamientoCamara);
+                // Modo anclado: la geometría pasa a oclusor invisible o desaparece, los
+                // marcadores quedan fuera de la selección, y la transparencia debe estar
+                // encendida (es el fondo sobre el que se compone la telemetría).
+                MROcclusionService.Aplicar(index);
+                ColliderBootstrapper.ExcluirPuntosDeNavegacionDeLaSeleccion(index);
 
+                if (MRPassthroughController.Instancia != null &&
+                    !MRPassthroughController.Instancia.Activado)
+                    MRPassthroughController.Instancia.Aplicar(true);
+            }
+
+            // --- Mandos e interaccion ---------------------------------------------------------
+            // Sin esto la escena era solo contemplativa: el modelo se veia pero no habia forma de
+            // senalar nada. El rig ya existe desde la etapa A (hizo falta para el selector); aqui
+            // se le suma el interprete del gatillo.
+            if (rig != null && desplazamientoCamara != null)
+            {
                 var interaccionGo = new GameObject("~InteraccionAR");
                 interaccionGo.transform.SetParent(desplazamientoCamara, false);
                 var interaccion = interaccionGo.AddComponent<MRInteractionController>();
-                interaccion.Initialize(rig, panel, origenXR, colocador);
+                interaccion.Initialize(rig, panel, colocador, navegador);
+            }
+            else
+            {
+                Debug.LogError("[DigitalTwin][AR] Sin rig de mandos no se crea la interaccion: " +
+                               "la escena queda contemplativa (sin seleccion ni desplazamiento).");
             }
 
-            anclaje.OnEstadoCambiado += estado =>
-                Debug.Log($"[DigitalTwin][MR] Estado del anclaje: {estado}.");
-
-            _initialized = true;
-            Debug.LogWarning("[DigitalTwin][AR] Bootstrap de Realidad Aumentada completo. " +
-                      "A la espera del anclaje espacial para colocar el modelo.");
+            Debug.LogWarning($"[DigitalTwin][AR] Bootstrap de Realidad Aumentada completo " +
+                             $"(modo {modo}).");
         }
+
+    }
+
+    /// <summary>
+    /// Coordina el arranque diferido: espera a la transparencia, muestra el selector y lanza
+    /// la etapa B con el modo elegido. Es un MonoBehaviour porque necesita corrutinas; vive
+    /// en su propio objeto para que un fallo suyo no arrastre al diagnóstico de entrada.
+    /// Clase de primer nivel a propósito: los MonoBehaviour anidados funcionan con
+    /// AddComponent, pero salirse del patrón del resto del proyecto no compra nada aquí.
+    /// </summary>
+    internal class MRBootSequencer : MonoBehaviour
+    {
+            /// <summary>La capa de transparencia se crea 90 fotogramas despues del arranque (ver
+            /// MRPassthroughController.FotogramasDeEspera y la violacion de segmento que motivo
+            /// ese retardo). Se espera ese plazo mas un margen antes de dar la transparencia por
+            /// no disponible.</summary>
+            private const int FotogramasDeEsperaMaxima = 210;
+            private const int FotogramasDeMargenTrasReintento = 30;
+
+            private SceneModelIndex _index;
+            private MRControllerRig _rig;
+            private Transform _desplazamientoCamara;
+            private Transform _origenXR;
+
+            public void Iniciar(SceneModelIndex index, MRControllerRig rig,
+                                Transform desplazamientoCamara, Transform origenXR)
+            {
+                _index = index;
+                _rig = rig;
+                _desplazamientoCamara = desplazamientoCamara;
+                _origenXR = origenXR;
+                StartCoroutine(Secuencia());
+            }
+
+            private IEnumerator Secuencia()
+            {
+                Debug.LogWarning("[DigitalTwin][AR] Arranque diferido: esperando a la transparencia " +
+                                 "para mostrar el selector de modo.");
+
+                int fotogramas = 0;
+                while (fotogramas < FotogramasDeEsperaMaxima && !TransparenciaActiva())
+                {
+                    fotogramas++;
+                    yield return null;
+                }
+
+                if (!TransparenciaActiva())
+                {
+                    // La transparencia pudo quedar apagada por una preferencia guardada o por un
+                    // fallo ya registrado por el propio controlador. Se intenta una vez más y el
+                    // selector se muestra igualmente: elegir modo sobre fondo opaco es peor que
+                    // sobre el vídeo de la sala, pero infinitamente mejor que no poder elegir.
+                    Debug.LogWarning($"[DigitalTwin][AR] La transparencia no esta activa tras " +
+                                     $"{fotogramas} fotogramas; se solicita de nuevo y el selector " +
+                                     "se mostrara de todos modos.");
+                    if (MRPassthroughController.Instancia != null)
+                        MRPassthroughController.Instancia.Aplicar(true);
+                    for (int i = 0; i < FotogramasDeMargenTrasReintento; i++) yield return null;
+                }
+
+                Debug.LogWarning($"[DigitalTwin][AR] Selector de modo visible (transparencia " +
+                                 $"activa: {TransparenciaActiva()}).");
+
+                MRModeSelector.Mostrar(_rig, Camera.main, modo =>
+                {
+                    MRDigitalTwinBootstrap.MontarGemelo(modo, _index, _rig,
+                                                        _desplazamientoCamara, _origenXR);
+                    Destroy(gameObject);
+                });
+            }
+
+            private static bool TransparenciaActiva()
+            {
+                return MRPassthroughController.Instancia != null &&
+                       MRPassthroughController.Instancia.Activado;
+            }
     }
 }
