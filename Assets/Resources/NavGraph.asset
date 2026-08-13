@@ -283,7 +283,7 @@ MonoBehaviour:
     Sala: 
     Posicion: {x: 44.287045, y: 1.075, z: -53.507305}
     Vecinos: 0c000000250000002a00000032000000
-  GeneradoEl: 2026-08-10 21:07
+  GeneradoEl: 2026-08-11 22:54
   EscenaOrigen: ARScene
   Parametros: "RNG sobre coste; tolerancia vertical 2,5 m; longitud m\xE1xima 25
     m; penalizaciones: paso 2 m, vidrio 8 m, fabrica 30 m, otros 10 m; puertas como

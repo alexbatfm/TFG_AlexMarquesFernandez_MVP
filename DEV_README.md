@@ -303,6 +303,18 @@ pendiente de poder probarla con el dispositivo puesto.
 5. Known issue de HTC con OpenXR ≥1.12.1 en Android: visión recortada; se corrige poniendo
    `XRSettings.occlusionMaskScale = 0` y `useOcclusionMesh = false` al arrancar.
 
+**Actualización 2026-08-10/11 (no reescribe lo de arriba, lo complementa):** el punto 1 ya está
+hecho, pero la escena se llama `ARScene.unity` (renombrada desde `MRScene.unity`, alineado con
+la terminología «Realidad Aumentada» que fijó Sergio). El punto 3 ya tiene código:
+`MR/MRControllerRig.cs` (pose y gatillo de ambos mandos por `UnityEngine.XR.InputDevices`, rayo
+visual) y `MR/MRInteractionController.cs` (selección/locomoción por raycast, reutilizando el
+grafo de navegación y el panel de metadatos existentes). Ninguno de los dos se ha podido probar
+todavía: `MRDigitalTwinBootstrap.NombreEscenaMR` sigue apuntando al nombre antiguo `"MRScene"`,
+así que el bootstrap de AR no se activa con la escena renombrada — confirmado en una prueba real
+en el visor el 2026-08-10. El detalle día a día de esto (y de qué más se verificó en esa misma
+prueba: sesión OpenXR, IoT, colliders) está en `TFG/docs/roadmap/CHECKLIST-hasta-defensa.md`,
+Bloque 2 — este fichero describe el diseño, no el estado diario.
+
 ---
 
 ## Verificación end-to-end y limitaciones conocidas del MVP
