@@ -239,16 +239,19 @@ namespace DigitalTwin.MR
             // escritorio; lo único que cambia es dónde vive el panel. Aquí el canvas es de tipo
             // world-space: en un visor, una interfaz pegada a la cara resulta incómoda y rompe la
             // sensación de estar dentro del edificio.
-            // 0,58 m de ancho, un cinco por ciento sobre los 0,55 iniciales: verificado en el
-            // visor que a esa distancia el tamaño se lee cómodamente.
             //
-            // El tamaño no se reduce para despejar la mirada; eso se resuelve bajando el panel
-            // (ver WorldPanelPlacer.AlturaRelativa). Las dos cosas están acopladas: al crecer el
-            // ancho crece el alto en la misma proporción, y con él la altura a la que hay que
-            // colocarlo para que el borde superior no invada la línea de visión. Si se vuelve a
-            // tocar este valor, hay que revisar el otro.
+            // ANCHO DEFINITIVO: 1 m (decisión del 14-08, tras probar 0,58 y 0,70). Cada unidad
+            // de maquetación pasa a valer 1,11 mm de mundo (900 px de lienzo), así que los
+            // cuerpos actuales crecen un 43 % respecto al 0,70 probado y un 72 % respecto al
+            // 0,58 original SIN tocar ningún tamaño de fuente; antes de subir más cuerpos hay
+            // que comprobar en el visor si con esto basta (la sospecha es que el problema era
+            // la nitidez del rasterizado, no el tamaño). La altura del panel ya NO está
+            // acoplada a mano con este valor: WorldPanelPlacer la deriva del tamaño real del
+            // lienzo (ver AlturaRelativaCalculada), de modo que este número se puede cambiar
+            // sin revisar nada más — el 0,70 del 14-08 con la constante antigua dejó el borde
+            // superior 2,8 cm por encima de los ojos, y esa clase de error ya no puede ocurrir.
             var canvas = DigitalTwin.UI.RuntimeUIFactory.CreateWorldCanvas("DigitalTwinCanvasMR",
-                                                                           anchoMetros: 0.70f);
+                                                                           anchoMetros: 1f);
 
             var panelGo = new GameObject("~MetadataPanelMR");
             Object.DontDestroyOnLoad(panelGo);
@@ -261,10 +264,11 @@ namespace DigitalTwin.MR
             // Cuerpos de letra del visor: con la escala de render en la estándar (1.0), los
             // píxeles de legibilidad se ganan en el contenido (prueba del 14-08: el cuerpo
             // pequeño era ilegible a escala 1.0 y solo aceptable encareciendo toda la escena
-            // a 1.4). El tamaño y la posición del panel no cambian: siguen siendo los aprobados.
+            // a 1.4). Los cuerpos NO se suben más en esta tanda: el paso a 1 m de ancho ya los
+            // agranda un 43 % angular respecto al 0,70 probado, y primero hay que ver si basta.
             panel.UsarTipografiaDeVisor();
             // Fondo translúcido: da sensación de espacio sin restar legibilidad al texto, que
-            // sigue a opacidad completa (ver SetOpacidadFondo). Ante el usuario y a 1,3 m ocupa
+            // sigue a opacidad completa (ver SetOpacidadFondo). Ante el usuario y a 1,1 m ocupa
             // bastante campo de visión, y en modo anclado lo que hay detrás es el edificio real.
             panel.SetOpacidadFondo(0.55f);
 
@@ -300,6 +304,7 @@ namespace DigitalTwin.MR
             // --- Lo específico de cada modo ---------------------------------------------------
 
             MRNodeNavigator navegador = null;
+            MRMenuZonas menuZonas = null;
 
             if (modo == ModoAR.NavegacionPorNodos)
             {
@@ -331,6 +336,21 @@ namespace DigitalTwin.MR
                     navegador = navegadorGo.AddComponent<MRNodeNavigator>();
                     navegador.Initialize(origenXR, Camera.main, index, indicadores);
                     navegador.ColocarEnNodoInicial();
+
+                    // Menú de zonas: la última pieza de paridad con escritorio. Solo en este
+                    // modo y solo con mandos (sin rig no habría forma de abrirlo ni de elegir).
+                    if (rig != null)
+                    {
+                        var menuGo = new GameObject("~MenuZonasARRaiz");
+                        Object.DontDestroyOnLoad(menuGo);
+                        menuZonas = menuGo.AddComponent<MRMenuZonas>();
+                        menuZonas.Initialize(rig, Camera.main, navegador, index);
+                    }
+                    else
+                    {
+                        Debug.LogWarning("[DigitalTwin][AR] Sin rig de mandos no se crea el " +
+                                         "menu de zonas: no habria boton con que abrirlo.");
+                    }
                 }
             }
             else
@@ -340,6 +360,14 @@ namespace DigitalTwin.MR
                 // encendida (es el fondo sobre el que se compone la telemetría).
                 MROcclusionService.Aplicar(index);
                 ColliderBootstrapper.ExcluirPuntosDeNavegacionDeLaSeleccion(index);
+
+                // El menú de zonas NO se ofrece en anclado, a conciencia: aquí el
+                // desplazamiento es físico (el usuario anda por la obra) y un teletransporte
+                // desincronizaría la vista de su cuerpo — la misma razón por la que este modo
+                // tampoco ofrece puntos de navegación.
+                Debug.LogWarning("[DigitalTwin][AR] Menu de zonas no aplicable en modo anclado: " +
+                                 "el desplazamiento es fisico y un salto desincronizaria al " +
+                                 "usuario de su cuerpo.");
 
                 if (MRPassthroughController.Instancia != null &&
                     !MRPassthroughController.Instancia.Activado)
@@ -355,7 +383,7 @@ namespace DigitalTwin.MR
                 var interaccionGo = new GameObject("~InteraccionAR");
                 interaccionGo.transform.SetParent(desplazamientoCamara, false);
                 var interaccion = interaccionGo.AddComponent<MRInteractionController>();
-                interaccion.Initialize(rig, panel, colocador, navegador, index);
+                interaccion.Initialize(rig, panel, colocador, navegador, index, menuZonas);
             }
             else
             {

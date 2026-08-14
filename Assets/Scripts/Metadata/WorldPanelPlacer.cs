@@ -40,17 +40,40 @@ namespace DigitalTwin.Metadata
         [Header("Colocación respecto al usuario")]
         [Tooltip("Distancia del panel al usuario, en metros. Por debajo de 0,8 m la disparidad " +
                  "entre convergencia y enfoque resulta molesta; por encima de 2 m el texto pierde " +
-                 "legibilidad. Bajada de 1,3 a 1,1 tras la prueba del 2026-08-13 (texto borroso): " +
-                 "a 1,1 m el lienzo de 0,58 m sube de 25 a 30 grados de ancho angular y cada " +
-                 "glifo gana un 18 % de pixeles fisicos. La altura relativa esta ACOPLADA a esta " +
-                 "distancia: con -0,40 m y media altura de lienzo de 0,354 m, el borde superior " +
-                 "queda a (0,40-0,354)/1,1 = 2,4 grados bajo la linea de vision, todavia fuera " +
-                 "de ella (a 1,3 m eran 2,0). Acercar MAS exige recalcular ese margen.")]
+                 "legibilidad. Bajada de 1,3 a 1,1 tras la prueba del 2026-08-13 (texto borroso).")]
         public float DistanciaAlUsuario = 1.1f;
 
-        [Tooltip("Desplazamiento vertical respecto a la altura de los ojos, en metros. El panel " +
-                 "entero debe quedar POR DEBAJO de la línea de visión, no simplemente escorado.")]
-        public float AlturaRelativa = -0.40f;
+        [Tooltip("Margen angular del BORDE SUPERIOR del panel bajo la linea de vision, en grados. " +
+                 "La altura del panel ya no es una constante: se DERIVA del tamano real del " +
+                 "lienzo en Initialize (ver AlturaRelativaCalculada), de modo que cambiar el " +
+                 "ancho del lienzo no puede volver a invadir la linea de vision. 2,4 era el " +
+                 "margen que producia el valor aprobado (-0,40 m) con el lienzo de 0,58 m.")]
+        [Range(0.5f, 10f)] public float MargenBajoVisionGrados = 2.4f;
+
+        /// <summary>
+        /// Desplazamiento vertical del CENTRO del panel respecto a los ojos, en metros. El panel
+        /// entero debe quedar POR DEBAJO de la línea de visión: esa condición es la que permite
+        /// ver el elemento señalado por encima del panel y la que hace funcionar el cierre por
+        /// segundo disparo (si el panel invadiera la mirada, interceptaría el rayo del segundo
+        /// disparo en lugar del elemento).
+        ///
+        /// EL CÁLCULO, escrito y no solo el número. Con el margen angular θ y la distancia d,
+        /// el borde superior debe quedar tan(θ)·d metros bajo los ojos; como el centro está
+        /// media altura de lienzo por debajo del borde:
+        ///
+        ///     AlturaRelativa = −( tan(θ)·d + alto/2 ),   alto = altoPx·(anchoMetros/anchoPx)
+        ///
+        /// Con los valores históricos (0,58 m de ancho, lienzo 900×1100, d = 1,1, θ = 2,4°):
+        /// alto = 0,709, y −(0,046 + 0,354) = −0,40 — exactamente el valor que se aprobó en el
+        /// visor, lo que valida la fórmula. Con el ancho definitivo de 1 m: alto = 1,222 y
+        /// AlturaRelativa = −(0,046 + 0,611) = −0,66 m.
+        ///
+        /// POR QUÉ SE DERIVA EN VEZ DE CONSTANTE: el 14-08 el ancho se subió a 0,70 m con la
+        /// constante antigua (−0,40) y el borde superior pasó a quedar 2,8 cm POR ENCIMA de los
+        /// ojos (el umbral de invasión estaba en 0,654 m de ancho). Con la derivación, esa
+        /// clase de error deja de poder existir.
+        /// </summary>
+        public float AlturaRelativaCalculada { get; private set; } = -0.40f;
 
         [Tooltip("Zona muerta angular, en grados. Mientras la mirada no se aleje más de este " +
                  "ángulo del panel, el panel no se mueve en absoluto.")]
@@ -84,7 +107,36 @@ namespace DigitalTwin.Metadata
             canvasMundo.worldCamera = Camera.main;
             ConstruirVolumenDeBloqueo(canvasMundo);
             ConstruirLinea();
+            CalcularAlturaRelativa(canvasMundo);
             _panel.gameObject.SetActive(false);
+        }
+
+        /// <summary>
+        /// Deriva la altura del panel del tamaño REAL del lienzo, aplicando la fórmula
+        /// documentada en <see cref="AlturaRelativaCalculada"/>. Se registra el cálculo entero:
+        /// si alguna vez el panel invade la mirada, el registro dirá con qué números se colocó.
+        /// </summary>
+        private void CalcularAlturaRelativa(Canvas canvasMundo)
+        {
+            var rt = canvasMundo.transform as RectTransform;
+            if (rt == null)
+            {
+                Debug.LogWarning("[DigitalTwin][AR] El lienzo del panel no tiene RectTransform; " +
+                                 $"la altura relativa se queda en el valor por defecto " +
+                                 $"({AlturaRelativaCalculada:0.00} m).");
+                return;
+            }
+
+            float altoMetros = rt.rect.height * rt.localScale.y;
+            float margen = Mathf.Tan(MargenBajoVisionGrados * Mathf.Deg2Rad) * DistanciaAlUsuario;
+            AlturaRelativaCalculada = -(margen + altoMetros * 0.5f);
+
+            Debug.LogWarning($"[DigitalTwin][AR] Panel: lienzo de " +
+                             $"{rt.rect.width * rt.localScale.x:0.00}x{altoMetros:0.00} m a " +
+                             $"{DistanciaAlUsuario:0.00} m; altura relativa derivada = " +
+                             $"-(tan({MargenBajoVisionGrados:0.0} grados)*{DistanciaAlUsuario:0.00} + " +
+                             $"{altoMetros * 0.5f:0.00}) = {AlturaRelativaCalculada:0.00} m. " +
+                             "El borde superior queda bajo la linea de vision por construccion.");
         }
 
         /// <summary>
@@ -240,7 +292,7 @@ namespace DigitalTwin.Metadata
             Vector3 origen = _camara.position;
             _posicionDeseada = origen
                              + _rumboPanel * DistanciaAlUsuario
-                             + Vector3.up * AlturaRelativa;
+                             + Vector3.up * AlturaRelativaCalculada;
         }
 
         private void ActualizarLinea()

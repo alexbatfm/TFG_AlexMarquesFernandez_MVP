@@ -34,17 +34,18 @@ namespace DigitalTwin.MR
     /// volúmenes actuales), no contra las posiciones guardadas en el asset del grafo: el asset
     /// se generó con el modelo en su pose de autor y quedaría obsoleto si el modelo se moviera.
     ///
-    /// SOBRE LAS ALTURAS (segunda prueba del 14-08: «nodos a alturas que no les corresponden»).
-    /// Cada
-    /// consumidor de posiciones tiene ahora su regla explícita y este fichero es el único que
-    /// las decide: el VIAJE a una esfera termina a su altura de autor (1,55 m, altura de la
-    /// vista); el viaje a una puerta conserva la altura actual de la vista, porque el centro de
-    /// la hoja está a ~1,05 m y aterrizar ahí hundiría la vista a la altura del pecho (regla
-    /// nueva del visor, declarada: el escritorio, que sí aterriza en el centro de la hoja, se
-    /// deja como está por ser su comportamiento verificado). El CARTEL de una esfera flota
-    /// 0,35 m sobre ella (~1,90 m); el de una puerta, 0,10 m sobre su dintel (~2,15 m), donde
-    /// se lee «esta puerta» sin rozar el techo. El refresco de indicadores registra la altura
-    /// de cada cartel para que cualquier discrepancia futura sea legible en el registro.
+    /// SOBRE LAS ALTURAS. Cada consumidor de posiciones tiene su regla explícita y este fichero
+    /// es el único que las decide. VIAJE: a una esfera se termina a su altura de autor (1,55 m,
+    /// altura de la vista); a una puerta se conserva la altura actual de la vista, porque el
+    /// centro de la hoja está a ~1,05 m y aterrizar ahí hundiría la vista a la altura del pecho
+    /// (regla del visor, declarada; el escritorio aterriza en el centro de la hoja, su
+    /// comportamiento verificado). CARTEL: desde el 14-08 los carteles se dibujan POR ENCIMA de
+    /// la geometría (ver MRIndicadoresDestino), así que su altura ya no compensa oclusiones —
+    /// las dos iteraciones anteriores (hundido en la hoja, pegado al techo) existían solo por
+    /// eso — y vuelve al criterio simple: LA ALTURA QUE CORRESPONDE AL NODO, 0,35 m sobre su
+    /// posición viva, sea esfera (~1,90 m) o puerta (~1,40 m, sobre el centro de la hoja, que
+    /// es donde está el nodo). El refresco registra la altura de cada cartel para que cualquier
+    /// discrepancia futura sea legible desde el registro.
     /// </summary>
     public class MRNodeNavigator : MonoBehaviour
     {
@@ -52,18 +53,22 @@ namespace DigitalTwin.MR
         /// longitud la transición no aporta orientación y solo hace esperar.</summary>
         private const float DistanciaMinimaParaAnimar = 1.5f;
 
+        /// <summary>Por encima de esta distancia el desplazamiento se resuelve con un salto
+        /// instantáneo, el mismo criterio (y el mismo valor) que el escritorio
+        /// (TourNavigationManager.DistanciaSaltoInstantaneo): atravesar medio edificio a
+        /// velocidad constante desorienta más que un corte limpio. Hasta el menú de zonas era
+        /// teórico —los vecinos del grafo quedan siempre cerca—; con él es el caso normal.</summary>
+        private const float DistanciaSaltoInstantaneo = 12f;
+
         /// <summary>Altura de la vista si el destino no tiene una posición utilizable.</summary>
         private const float AlturaVistaPorDefecto = 1.6f;
 
-        /// <summary>Altura del cartel sobre un nodo esfera. Los puntos ya están a la altura de
-        /// la vista; el cartel queda justo por encima de la línea de visión.</summary>
+        /// <summary>Altura del cartel sobre la posición viva del nodo, para CUALQUIER tipo de
+        /// nodo. Antes las puertas tenían una constante propia (dintel + margen) para esquivar
+        /// la oclusión de su propia hoja; con los carteles dibujándose por encima de la
+        /// geometría, esa compensación desaparece y queda el criterio simple: la altura que
+        /// corresponde al nodo.</summary>
         private const float AlturaCartelSobreNodo = 0.35f;
-
-        /// <summary>Margen del cartel de una puerta sobre su dintel. Colgarlo del centro de la
-        /// hoja lo hundía en la propia madera (prueba del 13-08) y colgarlo 0,40 m sobre el
-        /// dintel lo pegaba al techo (segunda prueba del 14-08); 0,10 m lo deja legible y por debajo
-        /// del forjado en las alturas libres de este modelo.</summary>
-        private const float MargenCartelSobreDintel = 0.10f;
 
         /// <summary>Cuántos destinos garantiza la salida de emergencia. Es el mismo mínimo que
         /// el criterio de proximidad de escritorio (MinHotspotsAlwaysShown): quedarse sin
@@ -295,6 +300,61 @@ namespace DigitalTwin.MR
             return true;
         }
 
+        /// <summary>Sala del nodo actual (LOC_Localizacion4), o cadena vacía. La consume el
+        /// menú de zonas para resaltar dónde está el usuario, igual que en escritorio.</summary>
+        public string SalaActual
+        {
+            get
+            {
+                var meta = MetaDe(_indiceNodoActual);
+                return meta != null ? (meta.GetValue("Otros", "LOC_Localizacion4") ?? string.Empty)
+                                    : string.Empty;
+            }
+        }
+
+        /// <summary>
+        /// Viaje de ACCESO DIRECTO a una zona: al punto representativo de la sala elegida en el
+        /// menú, SIN exigir arista del grafo. Es deliberado y es la paridad exacta con el
+        /// escritorio, cuyo menú de zonas tampoco valida alcanzabilidad: el grafo gobierna el
+        /// recorrido de proximidad (los carteles), y el menú existe precisamente para el salto
+        /// largo que el grafo haría dar en diez etapas. La regla del salto instantáneo por
+        /// encima de 12 m hace el resto. Devuelve false, con motivo en el registro, si el
+        /// destino no procede.
+        /// </summary>
+        public bool IrAZona(IfcMetadata destino, string sala)
+        {
+            if (EnTransito || destino == null) return false;
+            if (!Disponible)
+            {
+                Debug.LogWarning("[DigitalTwin][AR] Menu de zonas: sin grafo no hay nodo actual " +
+                                 "que actualizar; se viaja directo al punto.");
+                return ViajarDirectoSinGrafo(destino);
+            }
+
+            int indice = _grafo.IndiceDe(destino.globalId);
+            if (indice < 0)
+            {
+                // El representante de una sala es siempre una esfera y las 36 son nodos del
+                // grafo; si esto salta, el grafo se generó contra otro modelo.
+                Debug.LogWarning($"[DigitalTwin][AR] Menu de zonas: el punto representativo de " +
+                                 $"'{sala}' no es un nodo del grafo; se viaja igualmente, pero " +
+                                 "el nodo actual no se actualizara. Regenera el grafo.");
+                return ViajarDirectoSinGrafo(destino);
+            }
+            if (indice == _indiceNodoActual)
+            {
+                Debug.LogWarning($"[DigitalTwin][AR] Menu de zonas: ya se esta en el punto " +
+                                 $"representativo de '{sala}'; no hay viaje.");
+                return false;
+            }
+
+            Debug.LogWarning($"[DigitalTwin][AR] Menu de zonas: viaje de acceso directo a " +
+                             $"'{sala}' ('{Etiqueta(indice)}'), fuera del grafo a proposito " +
+                             "(mismo contrato que el menu de escritorio).");
+            StartCoroutine(Desplazamiento(PosicionDeViaje(indice), indice, Etiqueta(indice)));
+            return true;
+        }
+
         /// <summary>
         /// Degradación sin grafo: desplazamiento directo al punto señalado, el comportamiento
         /// anterior a la imposición de alcanzabilidad. Solo se llega aquí si el grafo falta,
@@ -415,12 +475,19 @@ namespace DigitalTwin.MR
 
             Vector3 desde = _camara.transform.position;
             float distancia = Vector3.Distance(desde, hasta);
-            float duracion = distancia < DistanciaMinimaParaAnimar
+
+            // Corto: instantáneo porque animar no aporta. Largo: instantáneo porque animar
+            // desorienta (regla de escritorio, mismo umbral). Solo el tramo intermedio se anima.
+            bool saltoPorLargo = distancia > DistanciaSaltoInstantaneo;
+            float duracion = distancia < DistanciaMinimaParaAnimar || saltoPorLargo
                 ? 0f
                 : Mathf.Clamp(distancia * 0.05f, 0.35f, 1.1f);
 
             Debug.LogWarning($"[DigitalTwin][AR] Desplazamiento hacia '{etiquetaFinal}': " +
-                             $"{distancia:0.0} m, {duracion:0.00} s.");
+                             $"{distancia:0.0} m, " +
+                             (saltoPorLargo
+                                 ? $"salto instantaneo (supera los {DistanciaSaltoInstantaneo:0} m)."
+                                 : $"{duracion:0.00} s."));
 
             if (duracion <= 0f)
             {
@@ -504,20 +571,14 @@ namespace DigitalTwin.MR
 
         /// <summary>
         /// Punto de anclaje del CARTEL de un nodo (posición FINAL: quien presenta no añade
-        /// ningún desplazamiento más). Esfera: 0,35 m sobre el punto (~1,90 m). Puerta: 0,10 m
-        /// sobre su dintel (~2,15 m) — en el centro de la hoja lo hundía la propia madera
-        /// (13-08) y a 0,40 m sobre el dintel rozaba o atravesaba el techo (2.ª prueba, 14-08).
+        /// ningún desplazamiento más). Regla única para todos los nodos: 0,35 m sobre la
+        /// posición viva. Las dos reglas especiales que hubo para las puertas —colgar del
+        /// dintel para que la hoja no ocultara el cartel; antes, el centro de la hoja lo
+        /// hundía en la madera— existían solo para esquivar la prueba de profundidad, y los
+        /// carteles se dibujan ahora por encima de la geometría (MRIndicadoresDestino).
         /// </summary>
         private Vector3 PosicionDeCartel(int indiceNodo)
         {
-            var meta = MetaDe(indiceNodo);
-            if (meta != null && meta.ifcType == "IfcDoor")
-            {
-                var r = meta.GetComponentInChildren<Renderer>();
-                if (r != null)
-                    return new Vector3(r.bounds.center.x, r.bounds.max.y + MargenCartelSobreDintel,
-                                       r.bounds.center.z);
-            }
             return PosicionDeNodo(indiceNodo) + Vector3.up * AlturaCartelSobreNodo;
         }
 

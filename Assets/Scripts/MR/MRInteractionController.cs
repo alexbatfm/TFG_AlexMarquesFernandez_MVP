@@ -61,6 +61,11 @@ namespace DigitalTwin.MR
         /// <summary>Navegación por nodos; null en modo anclado.</summary>
         private MRNodeNavigator _navegador;
 
+        /// <summary>Menú de zonas; null en modo anclado. Mientras está abierto, este
+        /// controlador cede el rayo: el menú gestiona su propia interacción (patrón del
+        /// selector de modo) y una pulsación sobre él no debe seleccionar lo de detrás.</summary>
+        private MRMenuZonas _menuZonas;
+
         private Camera _camara;
 
         /// <summary>Resolución collider→metadatos calculada una vez. Los colliders creados
@@ -81,12 +86,13 @@ namespace DigitalTwin.MR
 
         public void Initialize(MRControllerRig rig, MetadataPanelController panel,
                                WorldPanelPlacer colocadorPanel, MRNodeNavigator navegador,
-                               SceneModelIndex index)
+                               SceneModelIndex index, MRMenuZonas menuZonas = null)
         {
             _rig = rig;
             _panel = panel;
             _colocadorPanel = colocadorPanel;
             _navegador = navegador;
+            _menuZonas = menuZonas;
             _camara = Camera.main;
 
             ConstruirCacheDeColliders();
@@ -131,6 +137,10 @@ namespace DigitalTwin.MR
             // Bloqueo durante el trayecto: un disparo a mitad de camino encadenaria dos
             // desplazamientos y dejaria al usuario en un sitio que no ha elegido.
             if (_navegador != null && _navegador.EnTransito) return;
+
+            // Con el menu de zonas abierto, el rayo es suyo (el gestiona su propia seleccion y
+            // el marcador de impacto): pulsar sobre el menu no debe seleccionar lo de detras.
+            if (_menuZonas != null && _menuZonas.Abierto) return;
 
             if (!_rig.TryGetRayo(out Ray rayo)) { _rig.MostrarImpacto(0f, false); return; }
 

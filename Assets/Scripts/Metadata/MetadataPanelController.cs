@@ -82,12 +82,12 @@ namespace DigitalTwin.Metadata
         /// 440 px. Lo llama solo la versión inmersiva.
         ///
         /// Por qué: en escritorio el lienzo es la pantalla completa y el panel es una barra
-        /// lateral; ahí 440 px está bien. En el visor el lienzo entero mide 0,58 m de ancho
-        /// (la cifra que se verificó como legible), así que dejar el panel en 440 de 900 px lo
-        /// reducía a 0,28 m reales: la mitad del tamaño decidido, texto a la mitad de tamaño
-        /// angular, y de ahí buena parte de la borrosidad percibida — los glifos quedaban por
-        /// debajo del píxel físico del visor. Con el ancho completo, el mismo tamaño de fuente
-        /// ocupa el doble de píxeles en pantalla sin tocar ninguna otra medida del layout.
+        /// lateral; ahí 440 px está bien. En el visor el lienzo entero mide lo que decide el
+        /// arranque de RA (0,58 m al principio; 1 m desde el 14-08), así que dejar el panel en
+        /// 440 de 900 px lo reducía a menos de la mitad del ancho real: texto a la mitad de
+        /// tamaño angular, y de ahí buena parte de la borrosidad percibida — los glifos
+        /// quedaban por debajo del píxel físico del visor. Con el ancho completo, el mismo
+        /// tamaño de fuente ocupa el doble de píxeles en pantalla sin tocar el layout.
         /// </summary>
         public void UsarAnchoCompleto()
         {

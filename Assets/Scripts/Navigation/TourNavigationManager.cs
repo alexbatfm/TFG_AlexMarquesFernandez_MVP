@@ -332,41 +332,68 @@ namespace DigitalTwin.Navigation
         /// </summary>
         private void CalcularOrbesPrincipales()
         {
-            var porSala = new Dictionary<string, List<NavPointData>>();
+            // La definición de las zonas NO vive aquí: es CalcularZonas, compartida con la
+            // versión inmersiva (una sola definición, el mismo criterio que la alcanzabilidad).
+            // Este método solo traduce el resultado a los puntos del recorrido de escritorio.
+            _orbesPrincipales.Clear();
+            var metas = new List<IfcMetadata>(_points.Count);
+            foreach (var p in _points) if (p.Meta != null) metas.Add(p.Meta);
 
-            foreach (var p in _points)
+            foreach (var (sala, meta) in CalcularZonas(metas))
+                if (_puntosPorGlobalId.TryGetValue(meta.globalId, out var punto))
+                    _orbesPrincipales.Add((sala, punto));
+
+            Debug.Log($"[DigitalTwin] Menú de zonas: {_orbesPrincipales.Count} salas con punto representativo.");
+        }
+
+        /// <summary>
+        /// La definición de las ZONAS del edificio, en un único sitio para las dos versiones
+        /// (el menú desplegable de escritorio y el menú de zonas del visor): las salas
+        /// distintas que declaran los puntos "Esfera..." en su propiedad de localización, cada
+        /// una con su punto representativo — el más próximo al centro geométrico de los puntos
+        /// de esa sala, porque es el que ofrece la vista más representativa al llegar (en una
+        /// sala alargada, aterrizar en un extremo obliga a girarse para entender dónde se
+        /// está). Las zonas no se declaran en ninguna configuración: salen del propio modelo.
+        ///
+        /// Solo se consideran los puntos "Esfera...": los nodos de puerta, aunque tengan sala
+        /// asignada, están en el umbral y no representan la estancia; además duplicarían
+        /// entradas. Orden alfabético estable: el usuario busca una sala por su nombre, no por
+        /// su posición en el edificio.
+        /// </summary>
+        public static List<(string Sala, IfcMetadata Punto)> CalcularZonas(IEnumerable<IfcMetadata> metas)
+        {
+            var porSala = new Dictionary<string, List<IfcMetadata>>();
+            foreach (var meta in metas)
             {
-                if (p.Meta == null || p.Meta.ifcType != SceneModelIndex.NavPointIfcType) continue;
-                if (string.IsNullOrEmpty(p.Sala)) continue;
+                if (meta == null || meta.ifcType != SceneModelIndex.NavPointIfcType) continue;
+                string sala = meta.GetValue("Otros", "LOC_Localizacion4");
+                if (string.IsNullOrEmpty(sala)) continue;
 
-                if (!porSala.TryGetValue(p.Sala, out var lista))
-                    porSala[p.Sala] = lista = new List<NavPointData>();
-                lista.Add(p);
+                if (!porSala.TryGetValue(sala, out var lista))
+                    porSala[sala] = lista = new List<IfcMetadata>();
+                lista.Add(meta);
             }
 
-            _orbesPrincipales.Clear();
+            var zonas = new List<(string Sala, IfcMetadata Punto)>();
             foreach (var par in porSala)
             {
                 Vector3 centro = Vector3.zero;
-                foreach (var p in par.Value) centro += p.Pos;
+                foreach (var m in par.Value) centro += m.transform.position;
                 centro /= par.Value.Count;
 
-                NavPointData mejor = null;
+                IfcMetadata mejor = null;
                 float mejorDist = float.MaxValue;
-                foreach (var p in par.Value)
+                foreach (var m in par.Value)
                 {
-                    float d = Vector3.Distance(p.Pos, centro);
-                    if (d < mejorDist) { mejorDist = d; mejor = p; }
+                    float d = Vector3.Distance(m.transform.position, centro);
+                    if (d < mejorDist) { mejorDist = d; mejor = m; }
                 }
 
-                if (mejor != null) _orbesPrincipales.Add((par.Key, mejor));
+                if (mejor != null) zonas.Add((par.Key, mejor));
             }
 
-            // Orden alfabético estable: el usuario busca una sala por su nombre, no por su
-            // posición en el edificio.
-            _orbesPrincipales.Sort((a, b) => string.Compare(a.Sala, b.Sala, System.StringComparison.CurrentCulture));
-
-            Debug.Log($"[DigitalTwin] Menú de zonas: {_orbesPrincipales.Count} salas con punto representativo.");
+            zonas.Sort((a, b) => string.Compare(a.Sala, b.Sala, System.StringComparison.CurrentCulture));
+            return zonas;
         }
 
         /// <summary>
