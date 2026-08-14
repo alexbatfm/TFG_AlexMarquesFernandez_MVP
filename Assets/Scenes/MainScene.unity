@@ -1684,7 +1684,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f6ade1ba5899cf548a66cc0dbcaf6800, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::IFCImporter.IfcMetadata
-  globalId: 2vHutFm7D7UuA7Q023RYqk
+  globalId: 2vHutFm7D7UuA7Q023RZ2K
   ifcType: IfcMemberType
   ifcName: Montante rectangular:Montante rectangular - 5 x 10 cm
   ifcTag: 
@@ -1734,7 +1734,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f6ade1ba5899cf548a66cc0dbcaf6800, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::IFCImporter.IfcMetadata
-  globalId: 2vHutFm7D7UuA7Q023RYqk
+  globalId: 2vHutFm7D7UuA7Q023RZHm
   ifcType: IfcMemberType
   ifcName: Montante rectangular:Montante rectangular - 5 x 10 cm
   ifcTag: 
@@ -1999,7 +1999,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f6ade1ba5899cf548a66cc0dbcaf6800, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::IFCImporter.IfcMetadata
-  globalId: 0WjPo7iVtZ1Mz9H9jdTKmo
+  globalId: 0h2O$na0vBbVrR3MhssfAU
   ifcType: IfcDoorStyle
   ifcName: Puerta atamborada simple abatible:0864 x 2032mm Acri
   ifcTag: 
@@ -2091,7 +2091,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f6ade1ba5899cf548a66cc0dbcaf6800, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::IFCImporter.IfcMetadata
-  globalId: 2vHutFm7D7UuA7Q023RYqk
+  globalId: 033vbOvQP8AR_wKTL$tA8S
   ifcType: IfcMemberType
   ifcName: Montante rectangular:Montante rectangular - 5 x 10 cm
   ifcTag: 
@@ -3880,7 +3880,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f6ade1ba5899cf548a66cc0dbcaf6800, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::IFCImporter.IfcMetadata
-  globalId: 2vHutFm7D7UuA7Q023RYqk
+  globalId: 3JJ$Nbc159iP3a2b896Gqf
   ifcType: IfcMemberType
   ifcName: Montante rectangular:Montante rectangular - 5 x 10 cm
   ifcTag: 
@@ -5474,8 +5474,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f6ade1ba5899cf548a66cc0dbcaf6800, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::IFCImporter.IfcMetadata
-  globalId: 0RdvFF3Q_6Xoiw72yYbaIW
-  ifcType: IfcPlateType
+  globalId: 0wQknZQiXEOBcv2M5Gzx_b
+  ifcType: IfcWallType
   ifcName: "Muro b\xE1sico:Por defecto - 10 cm"
   ifcTag: 
   hierarchyPath: 
@@ -6136,7 +6136,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f6ade1ba5899cf548a66cc0dbcaf6800, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::IFCImporter.IfcMetadata
-  globalId: 2ur8gTt1zAqhrTxPwXLeeA
+  globalId: 2ur8gTt1zAqhrTxPwXLfTI
   ifcType: IfcColumnType
   ifcName: Pilar rectangular:30 x 40 cm
   ifcTag: 
@@ -7388,7 +7388,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f6ade1ba5899cf548a66cc0dbcaf6800, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::IFCImporter.IfcMetadata
-  globalId: 2vHutFm7D7UuA7Q023RYql
+  globalId: 2vHutFm7D7UuA7Q023RZhz
   ifcType: IfcPlateType
   ifcName: Panel de sistema:Acristalado_7
   ifcTag: 
@@ -8055,8 +8055,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f6ade1ba5899cf548a66cc0dbcaf6800, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::IFCImporter.IfcMetadata
-  globalId: 3JJ$Nbc159iP3a2b896LPW
-  ifcType: IfcPlateType
+  globalId: 1CgrtGXWXfsrCu0fcj8w58
+  ifcType: IfcWallType
   ifcName: "Muro b\xE1sico:_Acrista"
   ifcTag: 
   hierarchyPath: 
@@ -10154,7 +10154,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f6ade1ba5899cf548a66cc0dbcaf6800, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::IFCImporter.IfcMetadata
-  globalId: 2vHutFm7D7UuA7Q023RYqk
+  globalId: 2vHutFm7D7UuA7Q023RZgU
   ifcType: IfcMemberType
   ifcName: Montante rectangular:Montante rectangular - 5 x 10 cm
   ifcTag: 
@@ -11371,7 +11371,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f6ade1ba5899cf548a66cc0dbcaf6800, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::IFCImporter.IfcMetadata
-  globalId: 2vHutFm7D7UuA7Q023RYqk
+  globalId: 3JJ$Nbc159iP3a2b896GqJ
   ifcType: IfcMemberType
   ifcName: Montante rectangular:Montante rectangular - 5 x 10 cm
   ifcTag: 
@@ -12260,7 +12260,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f6ade1ba5899cf548a66cc0dbcaf6800, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::IFCImporter.IfcMetadata
-  globalId: 2ZEOGmsXPBQOTOFBVffAJw
+  globalId: 2ZEOGmsXPBQOTOFBVff5_2
   ifcType: IfcFurnitureType
   ifcName: MOB_Puesto_Rectangular:1250x700
   ifcTag: 
@@ -12864,7 +12864,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f6ade1ba5899cf548a66cc0dbcaf6800, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::IFCImporter.IfcMetadata
-  globalId: 2vHutFm7D7UuA7Q023RYqk
+  globalId: 2vHutFm7D7UuA7Q023RZHa
   ifcType: IfcMemberType
   ifcName: Montante rectangular:Montante rectangular - 5 x 10 cm
   ifcTag: 
@@ -13552,7 +13552,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f6ade1ba5899cf548a66cc0dbcaf6800, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::IFCImporter.IfcMetadata
-  globalId: 2vHutFm7D7UuA7Q023RYqk
+  globalId: 2vHutFm7D7UuA7Q023RZH4
   ifcType: IfcMemberType
   ifcName: Montante rectangular:Montante rectangular - 5 x 10 cm
   ifcTag: 
@@ -13602,7 +13602,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f6ade1ba5899cf548a66cc0dbcaf6800, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::IFCImporter.IfcMetadata
-  globalId: 2vHutFm7D7UuA7Q023RYqk
+  globalId: 2vHutFm7D7UuA7Q023RZ9V
   ifcType: IfcMemberType
   ifcName: Montante rectangular:Montante rectangular - 5 x 10 cm
   ifcTag: 
@@ -13830,7 +13830,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f6ade1ba5899cf548a66cc0dbcaf6800, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::IFCImporter.IfcMetadata
-  globalId: 2vHutFm7D7UuA7Q023RYql
+  globalId: 2vHutFm7D7UuA7Q023RZg3
   ifcType: IfcPlateType
   ifcName: Panel de sistema:Acristalado_7
   ifcTag: 
@@ -16077,7 +16077,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f6ade1ba5899cf548a66cc0dbcaf6800, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::IFCImporter.IfcMetadata
-  globalId: 2vHutFm7D7UuA7Q023RYqk
+  globalId: 2vHutFm7D7UuA7Q023RZgQ
   ifcType: IfcMemberType
   ifcName: Montante rectangular:Montante rectangular - 5 x 10 cm
   ifcTag: 
@@ -16546,7 +16546,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f6ade1ba5899cf548a66cc0dbcaf6800, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::IFCImporter.IfcMetadata
-  globalId: 2ZEOGmsXPBQOTOFBVff5Zu
+  globalId: 2ZEOGmsXPBQOTOFBVff5Zk
   ifcType: IfcFurnitureType
   ifcName: MOB_Puesto_Rectangular:1800x800
   ifcTag: 
@@ -16690,7 +16690,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f6ade1ba5899cf548a66cc0dbcaf6800, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::IFCImporter.IfcMetadata
-  globalId: 2vHutFm7D7UuA7Q023RYql
+  globalId: 2vHutFm7D7UuA7Q023RZH_
   ifcType: IfcPlateType
   ifcName: Panel de sistema:Acristalado_7
   ifcTag: 
@@ -16896,7 +16896,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f6ade1ba5899cf548a66cc0dbcaf6800, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::IFCImporter.IfcMetadata
-  globalId: 2vHutFm7D7UuA7Q023RYqk
+  globalId: 033vbOvQP8AR_wKTL$tA8T
   ifcType: IfcMemberType
   ifcName: Montante rectangular:Montante rectangular - 5 x 10 cm
   ifcTag: 
@@ -17022,7 +17022,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f6ade1ba5899cf548a66cc0dbcaf6800, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::IFCImporter.IfcMetadata
-  globalId: 2vHutFm7D7UuA7Q023RYqk
+  globalId: 3JJ$Nbc159iP3a2b896GqI
   ifcType: IfcMemberType
   ifcName: Montante rectangular:Montante rectangular - 5 x 10 cm
   ifcTag: 
@@ -17148,7 +17148,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f6ade1ba5899cf548a66cc0dbcaf6800, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::IFCImporter.IfcMetadata
-  globalId: 09Lnp3KRdF1PKNzaTy63ig
+  globalId: 0N3pYdyctAshkO0MvNFVzY
   ifcType: IfcDoorStyle
   ifcName: Puerta atamborada simple abatible:0762 x 2032mm
   ifcTag: 
@@ -17300,7 +17300,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f6ade1ba5899cf548a66cc0dbcaf6800, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::IFCImporter.IfcMetadata
-  globalId: 2vHutFm7D7UuA7Q023RYqk
+  globalId: 2vHutFm7D7UuA7Q023RZH8
   ifcType: IfcMemberType
   ifcName: Montante rectangular:Montante rectangular - 5 x 10 cm
   ifcTag: 
@@ -18326,7 +18326,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f6ade1ba5899cf548a66cc0dbcaf6800, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::IFCImporter.IfcMetadata
-  globalId: 2ur8gTt1zAqhrTxPwXLeeA
+  globalId: 2ur8gTt1zAqhrTxPwXLeaO
   ifcType: IfcColumnType
   ifcName: Pilar rectangular:30 x 40 cm
   ifcTag: 
@@ -18446,7 +18446,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f6ade1ba5899cf548a66cc0dbcaf6800, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::IFCImporter.IfcMetadata
-  globalId: 0WjPo7iVtZ1Mz9H9jdTKmo
+  globalId: 0e2tF86rwsKUWfS_4k$A2n
   ifcType: IfcDoorStyle
   ifcName: Puerta atamborada simple abatible:0864 x 2032mm Acri
   ifcTag: 
@@ -19078,7 +19078,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f6ade1ba5899cf548a66cc0dbcaf6800, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::IFCImporter.IfcMetadata
-  globalId: 3dR2ixGQP9NyKU6edX2eQR
+  globalId: 23U3vub$bG469iOFzdXS$2
   ifcType: IfcDoorStyle
   ifcName: Puerta atamborada simple abatible:0864 x 2032mm
   ifcTag: 
@@ -19470,7 +19470,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f6ade1ba5899cf548a66cc0dbcaf6800, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::IFCImporter.IfcMetadata
-  globalId: 2vHutFm7D7UuA7Q023RYqk
+  globalId: 2vHutFm7D7UuA7Q023RZ7L
   ifcType: IfcMemberType
   ifcName: Montante rectangular:Montante rectangular - 5 x 10 cm
   ifcTag: 
@@ -20308,7 +20308,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f6ade1ba5899cf548a66cc0dbcaf6800, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::IFCImporter.IfcMetadata
-  globalId: 2vHutFm7D7UuA7Q023RYqk
+  globalId: 2vHutFm7D7UuA7Q023RZ2_
   ifcType: IfcMemberType
   ifcName: Montante rectangular:Montante rectangular - 5 x 10 cm
   ifcTag: 
@@ -20793,7 +20793,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f6ade1ba5899cf548a66cc0dbcaf6800, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::IFCImporter.IfcMetadata
-  globalId: 2vHutFm7D7UuA7Q023RYqk
+  globalId: 033vbOvQP8AR_wKTL$tABF
   ifcType: IfcMemberType
   ifcName: Montante rectangular:Montante rectangular - 5 x 10 cm
   ifcTag: 
@@ -24060,7 +24060,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f6ade1ba5899cf548a66cc0dbcaf6800, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::IFCImporter.IfcMetadata
-  globalId: 2vHutFm7D7UuA7Q023RYql
+  globalId: 2vHutFm7D7UuA7Q023RZhy
   ifcType: IfcPlateType
   ifcName: Panel de sistema:Acristalado_7
   ifcTag: 
@@ -24176,7 +24176,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f6ade1ba5899cf548a66cc0dbcaf6800, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::IFCImporter.IfcMetadata
-  globalId: 2vHutFm7D7UuA7Q023RYqk
+  globalId: 2vHutFm7D7UuA7Q023RZSg
   ifcType: IfcMemberType
   ifcName: Montante rectangular:Montante rectangular - 5 x 10 cm
   ifcTag: 
@@ -24474,7 +24474,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f6ade1ba5899cf548a66cc0dbcaf6800, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::IFCImporter.IfcMetadata
-  globalId: 2vHutFm7D7UuA7Q023RYqk
+  globalId: 3JJ$Nbc159iP3a2b896HBx
   ifcType: IfcMemberType
   ifcName: Montante rectangular:Montante rectangular - 5 x 10 cm
   ifcTag: 
@@ -26546,7 +26546,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f6ade1ba5899cf548a66cc0dbcaf6800, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::IFCImporter.IfcMetadata
-  globalId: 2vHutFm7D7UuA7Q023RZh_
+  globalId: 2vHutFm7D7UuA7Q023RZhu
   ifcType: IfcMemberType
   ifcName: Montante rectangular:Montante rectangular - 10 x 10 cm
   ifcTag: 
@@ -26756,7 +26756,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f6ade1ba5899cf548a66cc0dbcaf6800, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::IFCImporter.IfcMetadata
-  globalId: 2vHutFm7D7UuA7Q023RYqk
+  globalId: 2vHutFm7D7UuA7Q023RZh$
   ifcType: IfcMemberType
   ifcName: Montante rectangular:Montante rectangular - 5 x 10 cm
   ifcTag: 
@@ -27064,7 +27064,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f6ade1ba5899cf548a66cc0dbcaf6800, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::IFCImporter.IfcMetadata
-  globalId: 2vHutFm7D7UuA7Q023RYql
+  globalId: 2vHutFm7D7UuA7Q023RZ6g
   ifcType: IfcPlateType
   ifcName: Panel de sistema:Acristalado_7
   ifcTag: 
@@ -27110,7 +27110,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f6ade1ba5899cf548a66cc0dbcaf6800, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::IFCImporter.IfcMetadata
-  globalId: 2vHutFm7D7UuA7Q023RYqk
+  globalId: 2vHutFm7D7UuA7Q023RZH$
   ifcType: IfcMemberType
   ifcName: Montante rectangular:Montante rectangular - 5 x 10 cm
   ifcTag: 
@@ -27837,7 +27837,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f6ade1ba5899cf548a66cc0dbcaf6800, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::IFCImporter.IfcMetadata
-  globalId: 2vHutFm7D7UuA7Q023RYqk
+  globalId: 2vHutFm7D7UuA7Q023RZSh
   ifcType: IfcMemberType
   ifcName: Montante rectangular:Montante rectangular - 5 x 10 cm
   ifcTag: 
@@ -27887,7 +27887,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f6ade1ba5899cf548a66cc0dbcaf6800, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::IFCImporter.IfcMetadata
-  globalId: 2ur8gTt1zAqhrTxPwXLeeA
+  globalId: 2ur8gTt1zAqhrTxPwXLebT
   ifcType: IfcColumnType
   ifcName: Pilar rectangular:30 x 40 cm
   ifcTag: 
@@ -28143,7 +28143,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f6ade1ba5899cf548a66cc0dbcaf6800, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::IFCImporter.IfcMetadata
-  globalId: 2vHutFm7D7UuA7Q023RYql
+  globalId: 2vHutFm7D7UuA7Q023RZHp
   ifcType: IfcPlateType
   ifcName: Panel de sistema:Acristalado_7
   ifcTag: 
@@ -31738,7 +31738,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f6ade1ba5899cf548a66cc0dbcaf6800, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::IFCImporter.IfcMetadata
-  globalId: 2vHutFm7D7UuA7Q023RYqk
+  globalId: 2vHutFm7D7UuA7Q023RZJT
   ifcType: IfcMemberType
   ifcName: Montante rectangular:Montante rectangular - 5 x 10 cm
   ifcTag: 
@@ -31910,7 +31910,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f6ade1ba5899cf548a66cc0dbcaf6800, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::IFCImporter.IfcMetadata
-  globalId: 2vHutFm7D7UuA7Q023RYqk
+  globalId: 2vHutFm7D7UuA7Q023RZ2j
   ifcType: IfcMemberType
   ifcName: Montante rectangular:Montante rectangular - 5 x 10 cm
   ifcTag: 
@@ -32621,7 +32621,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f6ade1ba5899cf548a66cc0dbcaf6800, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::IFCImporter.IfcMetadata
-  globalId: 2vHutFm7D7UuA7Q023RYql
+  globalId: 2vHutFm7D7UuA7Q023RZHD
   ifcType: IfcPlateType
   ifcName: Panel de sistema:Acristalado_7
   ifcTag: 
@@ -34555,7 +34555,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f6ade1ba5899cf548a66cc0dbcaf6800, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::IFCImporter.IfcMetadata
-  globalId: 2vHutFm7D7UuA7Q023RYqk
+  globalId: 2vHutFm7D7UuA7Q023RZhv
   ifcType: IfcMemberType
   ifcName: Montante rectangular:Montante rectangular - 5 x 10 cm
   ifcTag: 
@@ -34933,7 +34933,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f6ade1ba5899cf548a66cc0dbcaf6800, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::IFCImporter.IfcMetadata
-  globalId: 2vHutFm7D7UuA7Q023RYql
+  globalId: 2vHutFm7D7UuA7Q023RZ2v
   ifcType: IfcPlateType
   ifcName: Panel de sistema:Acristalado_7
   ifcTag: 
@@ -35215,7 +35215,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f6ade1ba5899cf548a66cc0dbcaf6800, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::IFCImporter.IfcMetadata
-  globalId: 2ur8gTt1zAqhrTxPwXLeeA
+  globalId: 2ur8gTt1zAqhrTxPwXLfTE
   ifcType: IfcColumnType
   ifcName: Pilar rectangular:30 x 40 cm
   ifcTag: 
@@ -36080,7 +36080,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f6ade1ba5899cf548a66cc0dbcaf6800, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::IFCImporter.IfcMetadata
-  globalId: 2vHutFm7D7UuA7Q023RYql
+  globalId: 2vHutFm7D7UuA7Q023RZHt
   ifcType: IfcPlateType
   ifcName: Panel de sistema:Acristalado_7
   ifcTag: 
@@ -36406,7 +36406,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f6ade1ba5899cf548a66cc0dbcaf6800, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::IFCImporter.IfcMetadata
-  globalId: 2vHutFm7D7UuA7Q023RYqk
+  globalId: 3JJ$Nbc159iP3a2b896LLR
   ifcType: IfcMemberType
   ifcName: Montante rectangular:Montante rectangular - 5 x 10 cm
   ifcTag: 
@@ -36742,7 +36742,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f6ade1ba5899cf548a66cc0dbcaf6800, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::IFCImporter.IfcMetadata
-  globalId: 2vHutFm7D7UuA7Q023RYqk
+  globalId: 2vHutFm7D7UuA7Q023RZHq
   ifcType: IfcMemberType
   ifcName: Montante rectangular:Montante rectangular - 5 x 10 cm
   ifcTag: 
@@ -36792,7 +36792,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f6ade1ba5899cf548a66cc0dbcaf6800, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::IFCImporter.IfcMetadata
-  globalId: 2vHutFm7D7UuA7Q023RYqk
+  globalId: 3JJ$Nbc159iP3a2b896Gs$
   ifcType: IfcMemberType
   ifcName: Montante rectangular:Montante rectangular - 5 x 10 cm
   ifcTag: 
@@ -37238,7 +37238,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f6ade1ba5899cf548a66cc0dbcaf6800, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::IFCImporter.IfcMetadata
-  globalId: 2vHutFm7D7UuA7Q023RYqk
+  globalId: 2vHutFm7D7UuA7Q023RZ2f
   ifcType: IfcMemberType
   ifcName: Montante rectangular:Montante rectangular - 5 x 10 cm
   ifcTag: 
@@ -37382,7 +37382,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f6ade1ba5899cf548a66cc0dbcaf6800, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::IFCImporter.IfcMetadata
-  globalId: 2vHutFm7D7UuA7Q023RYqk
+  globalId: 2vHutFm7D7UuA7Q023RZ7K
   ifcType: IfcMemberType
   ifcName: Montante rectangular:Montante rectangular - 5 x 10 cm
   ifcTag: 
@@ -45989,7 +45989,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f6ade1ba5899cf548a66cc0dbcaf6800, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::IFCImporter.IfcMetadata
-  globalId: 2vHutFm7D7UuA7Q023RYqk
+  globalId: 2vHutFm7D7UuA7Q023RYqf
   ifcType: IfcMemberType
   ifcName: Montante rectangular:Montante rectangular - 5 x 10 cm
   ifcTag: 
@@ -46253,7 +46253,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f6ade1ba5899cf548a66cc0dbcaf6800, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::IFCImporter.IfcMetadata
-  globalId: 2vHutFm7D7UuA7Q023RYqk
+  globalId: 2vHutFm7D7UuA7Q023RZ8T
   ifcType: IfcMemberType
   ifcName: Montante rectangular:Montante rectangular - 5 x 10 cm
   ifcTag: 
@@ -46303,7 +46303,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f6ade1ba5899cf548a66cc0dbcaf6800, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::IFCImporter.IfcMetadata
-  globalId: 2vHutFm7D7UuA7Q023RYqk
+  globalId: 3JJ$Nbc159iP3a2b896Gs_
   ifcType: IfcMemberType
   ifcName: Montante rectangular:Montante rectangular - 5 x 10 cm
   ifcTag: 
@@ -46745,7 +46745,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f6ade1ba5899cf548a66cc0dbcaf6800, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::IFCImporter.IfcMetadata
-  globalId: 2vHutFm7D7UuA7Q023RYqk
+  globalId: 3JJ$Nbc159iP3a2b896Gqg
   ifcType: IfcMemberType
   ifcName: Montante rectangular:Montante rectangular - 5 x 10 cm
   ifcTag: 
@@ -46795,7 +46795,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f6ade1ba5899cf548a66cc0dbcaf6800, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::IFCImporter.IfcMetadata
-  globalId: 2vHutFm7D7UuA7Q023RYqk
+  globalId: 2vHutFm7D7UuA7Q023RZH2
   ifcType: IfcMemberType
   ifcName: Montante rectangular:Montante rectangular - 5 x 10 cm
   ifcTag: 
@@ -46925,7 +46925,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f6ade1ba5899cf548a66cc0dbcaf6800, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::IFCImporter.IfcMetadata
-  globalId: 2vHutFm7D7UuA7Q023RYql
+  globalId: 2vHutFm7D7UuA7Q023RZHc
   ifcType: IfcPlateType
   ifcName: Panel de sistema:Acristalado_7
   ifcTag: 
@@ -47519,7 +47519,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f6ade1ba5899cf548a66cc0dbcaf6800, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::IFCImporter.IfcMetadata
-  globalId: 2vHutFm7D7UuA7Q023RYqk
+  globalId: 2vHutFm7D7UuA7Q023RZHd
   ifcType: IfcMemberType
   ifcName: Montante rectangular:Montante rectangular - 5 x 10 cm
   ifcTag: 
@@ -47890,7 +47890,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f6ade1ba5899cf548a66cc0dbcaf6800, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::IFCImporter.IfcMetadata
-  globalId: 2vHutFm7D7UuA7Q023RYqk
+  globalId: 033vbOvQP8AR_wKTL$tAB8
   ifcType: IfcMemberType
   ifcName: Montante rectangular:Montante rectangular - 5 x 10 cm
   ifcTag: 
