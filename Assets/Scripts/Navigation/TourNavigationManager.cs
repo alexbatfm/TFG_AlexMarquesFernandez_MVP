@@ -183,7 +183,16 @@ namespace DigitalTwin.Navigation
             _camera.transform.position = _current.Pos;
             GetComponent<TourCameraLook>()?.SyncFromTransform();
 
+            // Regla de la puerta transparente también en el encuadre inicial: si el punto más
+            // cercano resultara ser un umbral, la hoja no debe taparlo desde el primer fotograma.
+            PuertaTransparente.AlLlegarANodo(_current.Meta);
             RefreshHotspots();
+        }
+
+        private void OnDestroy()
+        {
+            // Por ningún camino debe quedar una hoja invisible al salir del recorrido.
+            PuertaTransparente.Restituir();
         }
 
         /// <summary>
@@ -717,6 +726,7 @@ namespace DigitalTwin.Navigation
                 _current = target;
                 IsTransitioning = false;
                 GetComponent<TourCameraLook>()?.SyncFromTransform();
+                PuertaTransparente.AlLlegarANodo(_current.Meta);
                 RefreshHotspots();
                 yield break;
             }
@@ -746,6 +756,9 @@ namespace DigitalTwin.Navigation
             IsTransitioning = false;
 
             GetComponent<TourCameraLook>()?.SyncFromTransform();
+            // Al ocupar un nodo puerta, su hoja deja de dibujarse; al ocupar cualquier otro,
+            // la hoja oculta (si la hay) se restituye. Ver PuertaTransparente.
+            PuertaTransparente.AlLlegarANodo(_current.Meta);
             RefreshHotspots();
         }
 

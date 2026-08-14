@@ -117,27 +117,34 @@ namespace DigitalTwin.Metadata
         /// cómodo con la escala de render a 1.4, que encarece TODOS los píxeles de la escena
         /// (~2× fragmentos) y no escalará con un modelo IFC mayor. La escala se queda en la
         /// estándar del runtime (1.0) y los píxeles se gastan donde faltaban: en los glifos.
-        /// El cuerpo mínimo pasa de 11-12 px a 15-16 px de lienzo — a 4 píxeles de lienzo por
-        /// unidad y 0,58 m de ancho, unos 10 px físicos por glifo a la distancia del panel.
+        ///
+        /// Cuerpos revisados tras la segunda prueba del 14-08, ya a escala 1.0 («sube entre 2 y 4
+        /// puntos, y si queda demasiado grande se revierte»): todos +3, salvo la ruta
+        /// jerárquica, +4 — era el cuerpo más pequeño del panel y el que peor se leía. El
+        /// cuerpo mínimo queda en 19 px de lienzo (~1,2 cm de alto de caja a 0,58 m de ancho
+        /// de panel), y la métrica vertical crece en proporción para que nada se solape; el
+        /// contenido sigue cabiendo porque la lista tiene desplazamiento y la cabecera se
+        /// recoloca midiendo (RecolocarCabecera), así que crecer cuerpos no recorta
+        /// información, solo alarga el scroll.
         ///
         /// El escritorio no llama a esto y conserva su tipografía exacta.
         /// </summary>
         public void UsarTipografiaDeVisor()
         {
-            _titleText.fontSize = 26;
-            _subtitleText.fontSize = 18;
-            _pathText.fontSize = 15;
-            _minTitulo = 36f; _maxTitulo = 110f;
-            _minSubtitulo = 26f; _maxSubtitulo = 72f;
-            _minRuta = 20f; _maxRuta = 110f;
+            _titleText.fontSize = 29;
+            _subtitleText.fontSize = 21;
+            _pathText.fontSize = 19;
+            _minTitulo = 40f; _maxTitulo = 124f;
+            _minSubtitulo = 30f; _maxSubtitulo = 84f;
+            _minRuta = 26f; _maxRuta = 130f;
 
-            _anchoBotonCerrar = 36f;
-            if (_closeRect != null) _closeRect.sizeDelta = new Vector2(36f, 36f);
-            if (_closeLabel != null) _closeLabel.fontSize = 22;
+            _anchoBotonCerrar = 40f;
+            if (_closeRect != null) _closeRect.sizeDelta = new Vector2(40f, 40f);
+            if (_closeLabel != null) _closeLabel.fontSize = 25;
 
-            _cuerpoPsetTitulo = 19; _cuerpoChevron = 18; _cuerpoContador = 16;
-            _cuerpoProp = 16; _cuerpoVacio = 17;
-            _altoFila = 38f; _altoFilaProp = 28f;
+            _cuerpoPsetTitulo = 22; _cuerpoChevron = 21; _cuerpoContador = 19;
+            _cuerpoProp = 19; _cuerpoVacio = 20;
+            _altoFila = 44f; _altoFilaProp = 34f;
 
             // Normalmente se llama antes del primer Show; si hubiera contenido, se rehace con
             // la métrica nueva para no dejar una mezcla de cuerpos.

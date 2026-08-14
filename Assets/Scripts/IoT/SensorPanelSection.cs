@@ -19,10 +19,11 @@ namespace DigitalTwin.IoT
 
         /// <summary>Tipografía del visor: cuerpos mayores y sección más alta. En el visor la
         /// escala de render se deja en la estándar (1.0) y la legibilidad se gana en el
-        /// contenido; el escritorio conserva sus cuerpos, que ya se leían bien.</summary>
+        /// contenido; el escritorio conserva sus cuerpos, que ya se leían bien. Cuerpos +3 tras la
+        /// segunda prueba del 14-08, en proporción con el resto del panel (encargo: 2-4 puntos).</summary>
         private readonly bool _tipografiaDeVisor;
 
-        private float Height => _tipografiaDeVisor ? 160f : 130f;
+        private float Height => _tipografiaDeVisor ? 190f : 130f;
 
         public SensorPanelSection(MySqlSensorPollingService service, bool tipografiaDeVisor = false)
         {
@@ -40,11 +41,11 @@ namespace DigitalTwin.IoT
             var bg = RuntimeUIFactory.CreatePanel(container, "SensorBg", new Color(0.16f, 0.38f, 0.58f, 0.35f));
             RuntimeUIFactory.StretchToParent((RectTransform)bg.transform);
 
-            AddLabel(container, "Header", "SENSOR IoT · TIEMPO REAL", v ? 15 : 12, -8, v ? 22 : 18,
+            AddLabel(container, "Header", "SENSOR IoT · TIEMPO REAL", v ? 18 : 12, -8, v ? 26 : 18,
                 new Color(0.6f, 0.85f, 1f, 1f), FontStyle.Bold);
 
-            AddLabel(container, "Subtitle", $"{info.Name}  ·  {info.RoomName}", v ? 16 : 13,
-                v ? -34 : -28, v ? 22 : 18,
+            AddLabel(container, "Subtitle", $"{info.Name}  ·  {info.RoomName}", v ? 19 : 13,
+                v ? -40 : -28, v ? 26 : 18,
                 new Color(0.85f, 0.85f, 0.85f, 1f));
 
             string valueLine;
@@ -68,9 +69,9 @@ namespace DigitalTwin.IoT
                     : "Sin conexión con la base de datos (¿arrancado el contenedor Docker?)";
             }
 
-            AddLabel(container, "Value", valueLine, v ? 30 : 26, v ? -62 : -50, v ? 40 : 34,
+            AddLabel(container, "Value", valueLine, v ? 33 : 26, v ? -72 : -50, v ? 46 : 34,
                 valueColor, FontStyle.Bold);
-            AddLabel(container, "Status", statusLine, v ? 14 : 11, v ? -108 : -92, v ? 44 : 30,
+            AddLabel(container, "Status", statusLine, v ? 17 : 11, v ? -124 : -92, v ? 56 : 30,
                 new Color(0.75f, 0.75f, 0.75f, 1f));
 
             return Height;

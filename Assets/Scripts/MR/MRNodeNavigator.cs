@@ -1,5 +1,6 @@
 using System.Collections;
 using System.Collections.Generic;
+using System.Text;
 using DigitalTwin.Core;
 using DigitalTwin.Navigation;
 using IFCImporter;
@@ -9,32 +10,65 @@ namespace DigitalTwin.MR
 {
     /// <summary>
     /// Política de navegación por nodos de la versión de Realidad Aumentada: mantiene el nodo
-    /// actual, impone el grafo de alcanzabilidad, muestra los indicadores de destino y ejecuta
-    /// los desplazamientos —incluido el tránsito automático a través de los nodos de puerta—.
+    /// actual, impone el grafo de alcanzabilidad, muestra los carteles de destino y ejecuta el
+    /// desplazamiento.
     ///
     /// Es la contraparte inmersiva de <see cref="TourNavigationManager"/> (escritorio). La
     /// definición de «qué destinos son alcanzables» NO vive aquí: ambas versiones consumen
     /// <see cref="NavReachability"/>, de modo que solo existe una. Lo que esta clase añade es
     /// lo específico del visor: mover el origen de realidad extendida en lugar de la cámara
-    /// (la cámara la posee el seguimiento de la cabeza y no se puede escribir), presentar los
-    /// destinos como carteles en el espacio en lugar de proyectarlos a pantalla, y girar el
-    /// mundo —no la cabeza del usuario— cuando el tránsito cruza una puerta.
+    /// (la cámara la posee el seguimiento de la cabeza y no se puede escribir) y presentar los
+    /// destinos como carteles en el espacio en lugar de proyectarlos a pantalla.
+    ///
+    /// REVERSIÓN DEL 2026-08-14. Entre el 13 y el 14 esta clase encadenaba desplazamientos a
+    /// través de los nodos puerta (tránsito automático con giro, continuación por producto
+    /// escalar) y ofrecía destinos expandidos «a través de» las puertas, con carteles apilados.
+    /// La segunda prueba del 14-08 lo descartó: carteles a alturas imposibles —el apilado sobre el
+    /// dintel atravesaba el techo— y una navegación menos predecible. Se vuelve al contrato del
+    /// escritorio, que es el que la memoria documenta: PULSAR UN DESTINO ES LLEGAR A ESE
+    /// DESTINO, en un único desplazamiento. Estar en el umbral es un destino válido (las
+    /// puertas son nodos del grafo a propósito), y verse la hoja delante de la cara lo
+    /// resuelve <see cref="PuertaTransparente"/>, que es presentación, no navegación.
     ///
     /// SOBRE LAS POSICIONES. Los destinos se resuelven contra la escena viva (transformadas y
     /// volúmenes actuales), no contra las posiciones guardadas en el asset del grafo: el asset
     /// se generó con el modelo en su pose de autor y quedaría obsoleto si el modelo se moviera.
-    /// Para las DIRECCIONES del producto escalar sí se usan las posiciones del asset, que en
-    /// modo de navegación por nodos coinciden con las vivas (el modelo no se mueve en este
-    /// modo; el modo anclado no usa esta clase).
+    ///
+    /// SOBRE LAS ALTURAS (segunda prueba del 14-08: «nodos a alturas que no les corresponden»).
+    /// Cada
+    /// consumidor de posiciones tiene ahora su regla explícita y este fichero es el único que
+    /// las decide: el VIAJE a una esfera termina a su altura de autor (1,55 m, altura de la
+    /// vista); el viaje a una puerta conserva la altura actual de la vista, porque el centro de
+    /// la hoja está a ~1,05 m y aterrizar ahí hundiría la vista a la altura del pecho (regla
+    /// nueva del visor, declarada: el escritorio, que sí aterriza en el centro de la hoja, se
+    /// deja como está por ser su comportamiento verificado). El CARTEL de una esfera flota
+    /// 0,35 m sobre ella (~1,90 m); el de una puerta, 0,10 m sobre su dintel (~2,15 m), donde
+    /// se lee «esta puerta» sin rozar el techo. El refresco de indicadores registra la altura
+    /// de cada cartel para que cualquier discrepancia futura sea legible en el registro.
     /// </summary>
     public class MRNodeNavigator : MonoBehaviour
     {
-        /// <summary>Misma constante que usaba el desplazamiento simple: por debajo de esta
-        /// longitud total la transición no aporta orientación y solo hace esperar.</summary>
+        /// <summary>Misma constante que el desplazamiento simple original: por debajo de esta
+        /// longitud la transición no aporta orientación y solo hace esperar.</summary>
         private const float DistanciaMinimaParaAnimar = 1.5f;
 
-        /// <summary>Altura de la vista si el nodo final no tiene una posición utilizable.</summary>
+        /// <summary>Altura de la vista si el destino no tiene una posición utilizable.</summary>
         private const float AlturaVistaPorDefecto = 1.6f;
+
+        /// <summary>Altura del cartel sobre un nodo esfera. Los puntos ya están a la altura de
+        /// la vista; el cartel queda justo por encima de la línea de visión.</summary>
+        private const float AlturaCartelSobreNodo = 0.35f;
+
+        /// <summary>Margen del cartel de una puerta sobre su dintel. Colgarlo del centro de la
+        /// hoja lo hundía en la propia madera (prueba del 13-08) y colgarlo 0,40 m sobre el
+        /// dintel lo pegaba al techo (segunda prueba del 14-08); 0,10 m lo deja legible y por debajo
+        /// del forjado en las alturas libres de este modelo.</summary>
+        private const float MargenCartelSobreDintel = 0.10f;
+
+        /// <summary>Cuántos destinos garantiza la salida de emergencia. Es el mismo mínimo que
+        /// el criterio de proximidad de escritorio (MinHotspotsAlwaysShown): quedarse sin
+        /// salidas es el único fallo que la navegación no se puede permitir.</summary>
+        private const int MinimoDestinosGarantizados = 3;
 
         public bool Disponible { get; private set; }
         public bool EnTransito { get; private set; }
@@ -54,25 +88,17 @@ namespace DigitalTwin.MR
         private readonly HashSet<int> _vecinosDelNodoActual = new HashSet<int>();
 
         /// <summary>
-        /// Destinos actualmente OFRECIDOS al usuario (los que tienen cartel), con la puerta por
-        /// la que se entra a cada uno (la «vía»; -1 si el destino es un vecino directo). La
-        /// oferta son los vecinos del grafo EXPANDIDOS a través de las puertas
-        /// (<see cref="NavReachability.DestinosOfrecidos"/>): un vecino-puerta aporta además la
-        /// sala a la que desemboca. Cuando ningún destino es utilizable entra la salida de
-        /// emergencia (ver RefrescarIndicadores) y este diccionario contiene los sustitutos.
-        /// El viaje valida contra este conjunto: lo que se ofrece se puede pulsar, y nada más.
+        /// Destinos actualmente OFRECIDOS al usuario (los que tienen cartel). Normalmente
+        /// coincide con los vecinos del grafo; cuando ninguno es utilizable entra la salida de
+        /// emergencia (ver RefrescarIndicadores) y este conjunto contiene los sustitutos. El
+        /// viaje valida contra este conjunto: lo que se ofrece se puede pulsar, y nada más.
         /// </summary>
-        private readonly Dictionary<int, int> _destinosOfrecidos = new Dictionary<int, int>();
+        private readonly HashSet<int> _destinosOfrecidos = new HashSet<int>();
 
         /// <summary>Etiqueta única por nodo (índice de grafo → nombre con sufijo « · n» si el
         /// nombre visible se repite). Mismo criterio que el escritorio: sin esto, dos nodos de
         /// la misma sala («Comedor» y «Comedor») producen trazas y carteles indistinguibles.</summary>
         private Dictionary<int, string> _etiquetaUnicaPorNodo;
-
-        /// <summary>Cuántos destinos garantiza la salida de emergencia. Es el mismo mínimo que
-        /// el criterio de proximidad de escritorio (MinHotspotsAlwaysShown): quedarse sin
-        /// salidas es el único fallo que la navegación no se puede permitir.</summary>
-        private const int MinimoDestinosGarantizados = 3;
 
         public string NombreNodoActual =>
             _grafo != null && _indiceNodoActual >= 0 ? Etiqueta(_indiceNodoActual) : "(ninguno)";
@@ -139,6 +165,12 @@ namespace DigitalTwin.MR
                              "nodos con destino en escena.");
         }
 
+        private void OnDestroy()
+        {
+            // Por ningún camino debe quedar una hoja invisible al salir de la navegación.
+            PuertaTransparente.Restituir();
+        }
+
         /// <summary>
         /// En la degradación sin grafo, las esferas vuelven a ser el único destino visible.
         /// ColliderBootstrapper las oculta al arrancar; aquí se revierte solo esa parte.
@@ -190,10 +222,11 @@ namespace DigitalTwin.MR
                 return;
             }
 
-            _origenXR.position += PosicionDeNodo(mejor) - _camara.transform.position;
+            _origenXR.position += PosicionDeViaje(mejor) - _camara.transform.position;
             _indiceNodoActual = mejor;
             Debug.LogWarning($"[DigitalTwin][AR] Nodo inicial: '{Etiqueta(mejor)}' " +
                              $"(estaba a {mejorDist:0.0} m).");
+            PuertaTransparente.AlLlegarANodo(MetaDe(mejor));
             RefrescarIndicadores();
         }
 
@@ -218,7 +251,7 @@ namespace DigitalTwin.MR
         public bool EsDestinoOfrecido(int indiceNodo)
         {
             if (!Disponible || _indiceNodoActual < 0) return false;
-            return _destinosOfrecidos.ContainsKey(indiceNodo);
+            return _destinosOfrecidos.Contains(indiceNodo);
         }
 
         /// <summary>¿Corta el rayo el cartel de algún destino alcanzable?</summary>
@@ -231,8 +264,9 @@ namespace DigitalTwin.MR
         }
 
         /// <summary>
-        /// Desplazamiento a un nodo del grafo, con la alcanzabilidad como condición y el
-        /// tránsito por puertas resuelto. Devuelve false —siempre con el motivo en el
+        /// Desplazamiento a un nodo del grafo, con la alcanzabilidad como condición. Un único
+        /// desplazamiento al nodo pulsado — el mismo contrato que el escritorio: pulsar un
+        /// destino es llegar a ese destino. Devuelve false —siempre con el motivo en el
         /// registro— si el destino no procede.
         /// </summary>
         public bool SolicitarViaje(int indiceDestino)
@@ -245,7 +279,7 @@ namespace DigitalTwin.MR
             }
             if (indiceDestino == _indiceNodoActual) return false;
 
-            if (!_destinosOfrecidos.TryGetValue(indiceDestino, out int via))
+            if (!EsDestinoOfrecido(indiceDestino))
             {
                 // La imposición del grafo, en la capa de navegación y no solo en la visual:
                 // aunque el rayo alcance la esfera de un punto lejano, sin arista (ni cartel de
@@ -256,41 +290,8 @@ namespace DigitalTwin.MR
                 return false;
             }
 
-            // Un destino expandido (vía >= 0) se alcanza pulsando SU PUERTA en el resolutor:
-            // la ruta resultante es puerta → continuación, exactamente la que habría producido
-            // pulsar la puerta, así que el tránsito por polilínea y el giro no cambian.
-            var ruta = via >= 0
-                ? NavReachability.ResolverDestino(_grafo, _indiceNodoActual, via, EsPuerta)
-                : NavReachability.ResolverDestino(_grafo, _indiceNodoActual, indiceDestino, EsPuerta);
-            if (ruta.Count == 0)
-            {
-                Debug.LogWarning("[DigitalTwin][AR] La resolucion del destino devolvio una ruta " +
-                                 "vacia; no se viaja.");
-                return false;
-            }
-            if (via >= 0 && ruta[ruta.Count - 1] != indiceDestino)
-            {
-                // La resolución por producto escalar es determinista, así que esto solo puede
-                // pasar si el grafo cambió entre el refresco y la pulsación. Se viaja igualmente
-                // a donde desemboca la puerta, pero nunca en silencio.
-                Debug.LogWarning($"[DigitalTwin][AR] El destino expandido '{Etiqueta(indiceDestino)}' " +
-                                 $"via puerta '{Etiqueta(via)}' resolvio hacia " +
-                                 $"'{Etiqueta(ruta[ruta.Count - 1])}'; se viaja a este ultimo.");
-            }
-
-            // Registro del tránsito por puertas: nodo a nodo, con el producto escalar que
-            // justifica cada continuación elegida.
-            int previo = _indiceNodoActual;
-            for (int j = 0; j < ruta.Count - 1; j++)
-            {
-                float producto = NavReachability.ProductoEscalarDe(_grafo, previo, ruta[j], ruta[j + 1]);
-                Debug.LogWarning($"[DigitalTwin][AR] Nodo puerta '{Etiqueta(ruta[j])}': el transito " +
-                                 $"continua hacia '{Etiqueta(ruta[j + 1])}' (producto escalar " +
-                                 $"{producto:0.00}).");
-                previo = ruta[j];
-            }
-
-            StartCoroutine(Transito(ruta));
+            StartCoroutine(Desplazamiento(PosicionDeViaje(indiceDestino), indiceDestino,
+                                          Etiqueta(indiceDestino)));
             return true;
         }
 
@@ -305,9 +306,8 @@ namespace DigitalTwin.MR
 
             Vector3 pos = destino.transform.position;
             float altura = pos.y > 0.01f ? pos.y : AlturaVistaPorDefecto;
-            var ruta = new List<Vector3> { _camara.transform.position, new Vector3(pos.x, altura, pos.z) };
-            StartCoroutine(TransitoPorPolilinea(ruta, new bool[] { false, false },
-                                                nodoFinal: -1, etiquetaFinal: destino.ifcName));
+            StartCoroutine(Desplazamiento(new Vector3(pos.x, altura, pos.z), nodoFinal: -1,
+                                          etiquetaFinal: destino.ifcName));
             return true;
         }
 
@@ -315,49 +315,34 @@ namespace DigitalTwin.MR
         {
             if (!Disponible || _indiceNodoActual < 0) return;
 
-            // La única fuente de alcanzabilidad: el mismo ayudante que consume el escritorio,
-            // ampliado con la expansión a través de puertas (un vecino-puerta ofrece además la
-            // sala a la que desemboca; el viaje entra por esa puerta con la polilínea normal).
+            // La única fuente de alcanzabilidad: el mismo ayudante que consume el escritorio.
             var vecinos = NavReachability.VecinosAlcanzables(_grafo, _indiceNodoActual);
             _vecinosDelNodoActual.Clear();
             foreach (int v in vecinos) _vecinosDelNodoActual.Add(v);
 
-            var oferta = NavReachability.DestinosOfrecidos(_grafo, _indiceNodoActual, EsPuerta);
-            var destinos = new List<MRIndicadoresDestino.Destino>(oferta.Count);
-            var viaPorNodo = new Dictionary<int, int>(oferta.Count);
+            var destinos = new List<MRIndicadoresDestino.Destino>(vecinos.Count);
             int omitidos = 0;
-            int expandidos = 0;
-            foreach (var o in oferta)
+            foreach (int v in vecinos)
             {
-                if (_metaPorNodo[o.Nodo] == null) { omitidos++; continue; }
-                if (o.Via >= 0)
-                {
-                    // Un destino expandido cuyo cartel caería sobre el de otro ofrecido no
-                    // aporta: se conserva igualmente porque su cartel es la única mención de la
-                    // sala de destino, y el hueco sobre el dintel de su puerta lo separa.
-                    expandidos++;
-                }
-                viaPorNodo[o.Nodo] = o.Via;
+                if (_metaPorNodo[v] == null) { omitidos++; continue; }
                 destinos.Add(new MRIndicadoresDestino.Destino
                 {
-                    IndiceNodo = o.Nodo,
-                    Posicion = PosicionDeCartel(o.Nodo, o.Via),
-                    Etiqueta = Etiqueta(o.Nodo)
+                    IndiceNodo = v,
+                    Posicion = PosicionDeCartel(v),
+                    Etiqueta = Etiqueta(v)
                 });
             }
 
             // SALIDA GARANTIZADA. Un nodo sin ningún destino utilizable deja al usuario
             // encerrado, que es el único fallo que la navegación no se puede permitir (ocurrió
-            // en la prueba del 2026-08-13: un punto de baño cuyos únicos vecinos eran puertas
-            // con el cartel hundido en la propia hoja). Si tras resolver vecinos no queda nada
-            // que ofrecer, se ofrecen los nodos utilizables más cercanos, exactamente el mismo
-            // seguro que el mínimo del criterio de proximidad de escritorio. Nunca en silencio.
+            // en la prueba del 2026-08-13). Si tras resolver vecinos no queda nada que ofrecer,
+            // se ofrecen los nodos utilizables más cercanos, exactamente el mismo seguro que el
+            // mínimo del criterio de proximidad de escritorio. Nunca en silencio.
             if (destinos.Count == 0)
             {
                 var sustitutos = NodosMasCercanos(MinimoDestinosGarantizados);
                 foreach (int s in sustitutos)
                 {
-                    viaPorNodo[s] = -1;
                     destinos.Add(new MRIndicadoresDestino.Destino
                     {
                         IndiceNodo = s,
@@ -372,14 +357,25 @@ namespace DigitalTwin.MR
             }
 
             _destinosOfrecidos.Clear();
-            foreach (var d in destinos)
-                _destinosOfrecidos[d.IndiceNodo] = viaPorNodo.TryGetValue(d.IndiceNodo, out int via) ? via : -1;
+            foreach (var d in destinos) _destinosOfrecidos.Add(d.IndiceNodo);
 
             if (_indicadores != null) _indicadores.Mostrar(destinos);
+
+            // La altura de cada cartel va al registro: en la prueba del 14-08 hubo carteles a
+            // alturas que no correspondian (hasta atravesar el techo) y no habia forma de saber
+            // desde el registro CUALES ni CUANTO. Con esta linea, la proxima discrepancia entre
+            // lo que se ve y lo que deberia verse se diagnostica sin visor.
+            var alturas = new StringBuilder();
+            for (int i = 0; i < destinos.Count; i++)
+            {
+                if (i > 0) alturas.Append("; ");
+                alturas.Append('\'').Append(destinos[i].Etiqueta).Append("' y=")
+                       .Append(destinos[i].Posicion.y.ToString("0.00"));
+            }
             Debug.LogWarning($"[DigitalTwin][AR] Indicadores: {destinos.Count} destinos ofrecidos " +
-                             $"desde '{Etiqueta(_indiceNodoActual)}' (grado {vecinos.Count} en el grafo, " +
-                             $"{expandidos} expandidos a traves de puertas" +
-                             (omitidos > 0 ? $", {omitidos} nodos sin elemento en escena)." : ")."));
+                             $"desde '{Etiqueta(_indiceNodoActual)}' (grado {vecinos.Count} en el grafo" +
+                             (omitidos > 0 ? $", {omitidos} sin elemento en escena" : "") +
+                             $"). Carteles: {alturas}.");
         }
 
         /// <summary>
@@ -403,215 +399,62 @@ namespace DigitalTwin.MR
             return resultado;
         }
 
-        /// <summary>Separación vertical entre el cartel de una puerta y el del destino expandido
-        /// que desemboca por ella. El cartel mide ~0,35 m de alto en mundo (lienzo de 185 px a
-        /// 0,45 m de ancho); este hueco los deja apilados sin solaparse.</summary>
-        private const float SeparacionCartelExpandido = 0.45f;
+        // ------------------------------------------------------------------ desplazamiento ----
 
         /// <summary>
-        /// Punto de anclaje del CARTEL de un nodo, que no siempre es su punto de viaje.
-        ///
-        /// Para las esferas coinciden. Para las puertas no: el punto de viaje es el centro del
-        /// volumen de la hoja (por ahí se pasa), pero un cartel colgado ahí queda HUNDIDO EN LA
-        /// PROPIA HOJA y la prueba de profundidad lo oculta — es la causa de que en la prueba
-        /// del 2026-08-13 un punto de baño rodeado solo de puertas pareciera no tener salidas.
-        /// El cartel de una puerta se cuelga sobre su dintel (tope del volumen), donde flota
-        /// libre y se ve desde ambos lados.
-        ///
-        /// Un destino EXPANDIDO (se llega por la puerta <paramref name="via"/>) tiene el mismo
-        /// problema agravado: su punto de viaje está en la sala de al lado y los oclusores de
-        /// profundidad taparían el cartel entero. Su cartel se apila SOBRE el de su puerta,
-        /// donde el usuario puede verlo y donde se lee como lo que es: «esta puerta desemboca
-        /// ahí».
+        /// Un único desplazamiento continuo en línea recta, el «desplazamiento simple» que
+        /// documenta la memoria: duración proporcional a la distancia, acotada, y suavizado
+        /// solo en el tiempo. Mueve el origen de realidad extendida por la diferencia de
+        /// posiciones de cámara, de modo que la cabeza del usuario termina exactamente en el
+        /// destino aunque se mueva durante la transición.
         /// </summary>
-        private Vector3 PosicionDeCartel(int indiceNodo, int via = -1)
-        {
-            if (via >= 0)
-                return PosicionDeCartel(via) + Vector3.up * SeparacionCartelExpandido;
-
-            var meta = MetaDe(indiceNodo);
-            if (meta != null && meta.ifcType == "IfcDoor")
-            {
-                var r = meta.GetComponentInChildren<Renderer>();
-                if (r != null)
-                    return new Vector3(r.bounds.center.x, r.bounds.max.y + 0.05f, r.bounds.center.z);
-            }
-            return PosicionDeNodo(indiceNodo);
-        }
-
-        // ------------------------------------------------------------------ tránsito ---------
-
-        private IEnumerator Transito(List<int> ruta)
-        {
-            // Polilínea en mundo: del usuario al primer nodo y de ahí, nodo a nodo, hasta el
-            // final. SIN suavizar la trayectoria: por el vano de una puerta hay que pasar, y
-            // recortar la esquina significa atravesar la jamba.
-            var puntos = new List<Vector3>(ruta.Count + 1) { _camara.transform.position };
-            var esPuertaPunto = new bool[ruta.Count + 1];
-            for (int j = 0; j < ruta.Count; j++)
-            {
-                puntos.Add(PosicionDeNodo(ruta[j]));
-                esPuertaPunto[j + 1] = EsPuerta(ruta[j]);
-            }
-
-            // Altura: el punto final manda (regla del desplazamiento simple); los intermedios
-            // interpolan entre la altura de partida y la final para que cruzar una puerta —cuyo
-            // centro de hoja queda a media altura— no hunda la vista y la devuelva a subir.
-            int ultimo = puntos.Count - 1;
-            float alturaFinal = puntos[ultimo].y > 0.01f ? puntos[ultimo].y : AlturaVistaPorDefecto;
-            puntos[ultimo] = new Vector3(puntos[ultimo].x, alturaFinal, puntos[ultimo].z);
-            float largoXZ = 0f;
-            var acumuladoXZ = new float[puntos.Count];
-            for (int j = 1; j < puntos.Count; j++)
-            {
-                Vector3 a = puntos[j - 1], b = puntos[j];
-                a.y = 0; b.y = 0;
-                largoXZ += Vector3.Distance(a, b);
-                acumuladoXZ[j] = largoXZ;
-            }
-            for (int j = 1; j < ultimo; j++)
-            {
-                float f = largoXZ > 0.001f ? acumuladoXZ[j] / largoXZ : 0f;
-                puntos[j] = new Vector3(puntos[j].x,
-                                        Mathf.Lerp(puntos[0].y, alturaFinal, f),
-                                        puntos[j].z);
-            }
-
-            yield return TransitoPorPolilinea(puntos, esPuertaPunto,
-                                              nodoFinal: ruta[ruta.Count - 1],
-                                              etiquetaFinal: Etiqueta(ruta[ruta.Count - 1]));
-        }
-
-        /// <summary>
-        /// Un único desplazamiento continuo sobre la polilínea. La duración y el umbral de
-        /// animación se calculan sobre la LONGITUD TOTAL del recorrido, no sobre la distancia en
-        /// línea recta: un tránsito que rodea por una puerta recorre más metros que los que
-        /// separan origen y destino, y debe durar en consecuencia.
-        ///
-        /// El giro: al aproximarse a un punto de puerta, el origen de realidad extendida gira en
-        /// horizontal —alrededor de la posición del usuario— hasta que la vista queda mirando la
-        /// dirección de salida, completándose ANTES de alcanzar la puerta. Se gira el mundo una
-        /// cantidad fija calculada al entrar en el tramo; los giros de cabeza del usuario durante
-        /// el tránsito se respetan, no se contrarrestan.
-        /// </summary>
-        private IEnumerator TransitoPorPolilinea(List<Vector3> puntos, bool[] esPuertaPunto,
-                                                 int nodoFinal, string etiquetaFinal)
+        private IEnumerator Desplazamiento(Vector3 hasta, int nodoFinal, string etiquetaFinal)
         {
             EnTransito = true;
             if (_indicadores != null) _indicadores.OcultarTodos();
 
-            int tramos = puntos.Count - 1;
-            var acumulado = new float[puntos.Count];
-            float largoTotal = 0f;
-            for (int j = 1; j < puntos.Count; j++)
-            {
-                largoTotal += Vector3.Distance(puntos[j - 1], puntos[j]);
-                acumulado[j] = largoTotal;
-            }
-
-            float duracion = largoTotal < DistanciaMinimaParaAnimar
+            Vector3 desde = _camara.transform.position;
+            float distancia = Vector3.Distance(desde, hasta);
+            float duracion = distancia < DistanciaMinimaParaAnimar
                 ? 0f
-                : Mathf.Clamp(largoTotal * 0.05f, 0.35f, 1.1f);
+                : Mathf.Clamp(distancia * 0.05f, 0.35f, 1.1f);
 
-            Debug.LogWarning($"[DigitalTwin][AR] Transito hacia '{etiquetaFinal}': {tramos} tramo(s), " +
-                             $"{largoTotal:0.0} m, {duracion:0.00} s.");
+            Debug.LogWarning($"[DigitalTwin][AR] Desplazamiento hacia '{etiquetaFinal}': " +
+                             $"{distancia:0.0} m, {duracion:0.00} s.");
 
             if (duracion <= 0f)
             {
-                _origenXR.position += puntos[puntos.Count - 1] - puntos[0];
+                _origenXR.position += hasta - desde;
             }
             else
             {
                 float t = 0f;
-                float dPrevio = 0f;
-                int tramoActual = -1;
-                float gradosPorMetro = 0f;
-
+                Vector3 previo = desde;
                 while (t < 1f)
                 {
                     t += Time.deltaTime / duracion;
-                    // Suavizado solo en el TIEMPO (arranque y frenada del conjunto); la
-                    // trayectoria en el espacio sigue siendo la polilínea exacta.
+                    // Suavizado solo en el TIEMPO (arranque y frenada); la trayectoria en el
+                    // espacio es el segmento exacto.
                     float s = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(t));
-                    float d = s * largoTotal;
-
-                    int tramo = TramoDe(acumulado, d);
-                    if (tramo != tramoActual)
-                    {
-                        tramoActual = tramo;
-                        gradosPorMetro = GradosPorMetroDeGiro(puntos, esPuertaPunto, tramo,
-                                                              acumulado, d);
-                    }
-
-                    float avance = d - dPrevio;
-                    if (gradosPorMetro != 0f && avance > 0f)
-                        _origenXR.RotateAround(_camara.transform.position, Vector3.up,
-                                               gradosPorMetro * avance);
-
-                    _origenXR.position += PuntoEn(puntos, acumulado, d) - PuntoEn(puntos, acumulado, dPrevio);
-                    dPrevio = d;
+                    Vector3 punto = Vector3.Lerp(desde, hasta, s);
+                    _origenXR.position += punto - previo;
+                    previo = punto;
                     yield return null;
                 }
-
-                _origenXR.position += PuntoEn(puntos, acumulado, largoTotal) - PuntoEn(puntos, acumulado, dPrevio);
+                _origenXR.position += hasta - previo;
             }
 
             if (nodoFinal >= 0) _indiceNodoActual = nodoFinal;
             EnTransito = false;
             Debug.LogWarning($"[DigitalTwin][AR] Llegada a '{etiquetaFinal}'.");
+
+            // La regla de la puerta: si el nodo alcanzado es una puerta, su hoja deja de
+            // dibujarse mientras se ocupe; si no lo es, cualquier hoja oculta se restituye.
+            PuertaTransparente.AlLlegarANodo(nodoFinal >= 0 ? MetaDe(nodoFinal) : null);
             RefrescarIndicadores();
         }
 
-        /// <summary>
-        /// Si el tramo termina en una puerta con continuación, grados de giro horizontal por
-        /// metro recorrido para que la vista quede mirando la dirección de salida justo al
-        /// llegar a la puerta. Cero si el tramo no pide giro.
-        /// </summary>
-        private float GradosPorMetroDeGiro(List<Vector3> puntos, bool[] esPuertaPunto, int tramo,
-                                           float[] acumulado, float dActual)
-        {
-            int destinoTramo = tramo + 1;
-            if (destinoTramo >= puntos.Count || !esPuertaPunto[destinoTramo]) return 0f;
-            if (destinoTramo + 1 >= puntos.Count) return 0f; // puerta sin continuación: no se gira
-
-            Vector3 salida = puntos[destinoTramo + 1] - puntos[destinoTramo];
-            salida.y = 0f;
-            if (salida.sqrMagnitude < 0.0001f) return 0f;
-
-            Vector3 mirada = _camara.transform.forward;
-            mirada.y = 0f;
-            if (mirada.sqrMagnitude < 0.0001f) return 0f;
-
-            float grados = Vector3.SignedAngle(mirada.normalized, salida.normalized, Vector3.up);
-            float metrosRestantes = acumulado[destinoTramo] - dActual;
-            if (metrosRestantes < 0.05f) return 0f;
-
-            return grados / metrosRestantes;
-        }
-
-        private static int TramoDe(float[] acumulado, float d)
-        {
-            for (int j = 1; j < acumulado.Length; j++)
-                if (d <= acumulado[j]) return j - 1;
-            return acumulado.Length - 2;
-        }
-
-        private static Vector3 PuntoEn(List<Vector3> puntos, float[] acumulado, float d)
-        {
-            int tramo = TramoDe(acumulado, d);
-            float enTramo = d - acumulado[tramo];
-            float largoTramo = acumulado[tramo + 1] - acumulado[tramo];
-            float f = largoTramo > 0.0001f ? Mathf.Clamp01(enTramo / largoTramo) : 1f;
-            return Vector3.Lerp(puntos[tramo], puntos[tramo + 1], f);
-        }
-
         // ------------------------------------------------------------------ nodos ------------
-
-        private bool EsPuerta(int indiceNodo)
-        {
-            var meta = MetaDe(indiceNodo);
-            return meta != null && meta.ifcType == "IfcDoor";
-        }
 
         private IfcMetadata MetaDe(int indiceNodo)
         {
@@ -620,10 +463,10 @@ namespace DigitalTwin.MR
         }
 
         /// <summary>
-        /// Posición viva del nodo: el origen del objeto para los puntos "Esfera..." (ya están a
-        /// la altura de la vista) y el centro del volumen para las puertas (su origen cae en una
-        /// esquina del marco; usarlo dejaría la vista incrustada en el tabique). Es la misma
-        /// regla que aplica el gestor de escritorio.
+        /// Posición viva NEUTRA del nodo (distancias, referencia): el origen del objeto para
+        /// los puntos "Esfera..." (ya están a la altura de la vista) y el centro del volumen
+        /// para las puertas (su origen cae en una esquina del marco). Misma regla que el
+        /// gestor de escritorio.
         /// </summary>
         private Vector3 PosicionDeNodo(int indiceNodo)
         {
@@ -636,6 +479,46 @@ namespace DigitalTwin.MR
                 if (r != null) return r.bounds.center;
             }
             return meta.transform.position;
+        }
+
+        /// <summary>
+        /// Punto en el que termina el VIAJE a un nodo. Para una esfera coincide con el nodo
+        /// (altura de autor, 1,55 m). Para una puerta se conserva la ALTURA ACTUAL de la
+        /// vista: el centro de la hoja queda a ~1,05 m y aterrizar ahí hunde la vista a la
+        /// altura del pecho. Regla propia del visor, declarada en la cabecera de la clase; el
+        /// escritorio conserva la suya (aterriza en el centro de la hoja).
+        /// </summary>
+        private Vector3 PosicionDeViaje(int indiceNodo)
+        {
+            Vector3 pos = PosicionDeNodo(indiceNodo);
+            var meta = MetaDe(indiceNodo);
+            if (meta != null && meta.ifcType == "IfcDoor")
+            {
+                float alturaVista = _camara != null && _camara.transform.position.y > 0.5f
+                    ? _camara.transform.position.y
+                    : AlturaVistaPorDefecto;
+                return new Vector3(pos.x, alturaVista, pos.z);
+            }
+            return pos;
+        }
+
+        /// <summary>
+        /// Punto de anclaje del CARTEL de un nodo (posición FINAL: quien presenta no añade
+        /// ningún desplazamiento más). Esfera: 0,35 m sobre el punto (~1,90 m). Puerta: 0,10 m
+        /// sobre su dintel (~2,15 m) — en el centro de la hoja lo hundía la propia madera
+        /// (13-08) y a 0,40 m sobre el dintel rozaba o atravesaba el techo (2.ª prueba, 14-08).
+        /// </summary>
+        private Vector3 PosicionDeCartel(int indiceNodo)
+        {
+            var meta = MetaDe(indiceNodo);
+            if (meta != null && meta.ifcType == "IfcDoor")
+            {
+                var r = meta.GetComponentInChildren<Renderer>();
+                if (r != null)
+                    return new Vector3(r.bounds.center.x, r.bounds.max.y + MargenCartelSobreDintel,
+                                       r.bounds.center.z);
+            }
+            return PosicionDeNodo(indiceNodo) + Vector3.up * AlturaCartelSobreNodo;
         }
 
         private string Etiqueta(int indiceNodo)
