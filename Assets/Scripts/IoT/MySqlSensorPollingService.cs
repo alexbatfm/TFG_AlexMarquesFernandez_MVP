@@ -69,6 +69,16 @@ namespace DigitalTwin.IoT
         [Tooltip("Cada cuánto se consulta la base de datos por lecturas nuevas.")]
         public float PollIntervalSeconds = 5f;
 
+        /// <summary>Tope del retroceso exponencial cuando la base de datos no responde. En el
+        /// visor sin red local el fallo es PERMANENTE (el contenedor no es alcanzable), y
+        /// reintentar cada 5 s significaba pagar cada 5 s una apertura de conexión condenada
+        /// (ConnectionTimeout=5) durante toda la sesión: la prueba del 14-08 registró el fallo
+        /// en bucle mientras el tiempo de fotograma derivaba. Con retroceso, los reintentos se
+        /// espacian 5→10→20→40→60 s y se quedan ahí: si la base de datos vuelve (se arregla la
+        /// red), la conexión se recupera en a lo sumo un minuto, que para telemetría de
+        /// mantenimiento sobra.</summary>
+        private const float EsperaMaximaSegundos = 60f;
+
         public SensorDataStore Store { get; } = new SensorDataStore();
         public SensorCatalog Catalog { get; } = new SensorCatalog();
 
@@ -144,10 +154,22 @@ namespace DigitalTwin.IoT
         {
             try
             {
+                float espera = Mathf.Max(1f, PollIntervalSeconds);
                 while (_running)
                 {
-                    await PollOnceAsync();
-                    await Task.Delay(TimeSpan.FromSeconds(Mathf.Max(1f, PollIntervalSeconds)));
+                    bool exito = await PollOnceAsync();
+
+                    float esperaAnterior = espera;
+                    espera = exito
+                        ? Mathf.Max(1f, PollIntervalSeconds)
+                        : Mathf.Min(esperaAnterior * 2f, EsperaMaximaSegundos);
+
+                    if (!exito && espera > esperaAnterior)
+                        Debug.LogWarning($"[DigitalTwin][IoT] Retroceso exponencial: proximo " +
+                                         $"intento en {espera:0} s (la base de datos sigue sin " +
+                                         "responder).");
+
+                    await Task.Delay(TimeSpan.FromSeconds(espera));
                 }
             }
             catch (Exception ex)
@@ -161,7 +183,9 @@ namespace DigitalTwin.IoT
             }
         }
 
-        private async Task PollOnceAsync()
+        /// <summary>Un ciclo de sondeo. Devuelve si ha habido éxito, para que el bucle decida
+        /// la espera (retroceso exponencial en fallo).</summary>
+        private async Task<bool> PollOnceAsync()
         {
             try
             {
@@ -178,20 +202,27 @@ namespace DigitalTwin.IoT
                 foreach (var table in ReadingTables)
                     await PollTableAsync(connection, table.Table, table.ValueColumn, table.Kind);
 
+                if (!IsConnected)
+                    Debug.LogWarning($"[DigitalTwin][IoT] Conexion con MySQL establecida " +
+                                     $"({HostEfectivo}:{Port})" +
+                                     (LastSuccessfulPollUtc == default
+                                         ? "." : "; recuperada tras fallos, se vuelve al sondeo normal."));
+
                 IsConnected = true;
                 LastError = null;
                 LastSuccessfulPollUtc = DateTime.UtcNow;
+                return true;
             }
             catch (Exception ex)
             {
-                bool wasConnected = IsConnected;
                 IsConnected = false;
                 LastError = ex.Message;
-                if (wasConnected || LastSuccessfulPollUtc == default)
-                {
-                    Debug.LogWarning($"[DigitalTwin][IoT] No se ha podido consultar MySQL en {HostEfectivo}:{Port}: {ex.Message}\n" +
-                                      "¿Está arrancado el contenedor? -> docker start mysql-gemelo-digital");
-                }
+                // Sin condición de «solo la primera vez»: la frecuencia la limita ya el
+                // retroceso exponencial del bucle (como mucho una línea por minuto), y un
+                // middleware caído que deja de avisar parecería un middleware sano.
+                Debug.LogWarning($"[DigitalTwin][IoT] No se ha podido consultar MySQL en {HostEfectivo}:{Port}: {ex.Message}\n" +
+                                  "¿Está arrancado el contenedor? -> docker start mysql-gemelo-digital");
+                return false;
             }
         }
 

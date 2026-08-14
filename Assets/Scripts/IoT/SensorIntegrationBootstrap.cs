@@ -14,13 +14,17 @@ namespace DigitalTwin.IoT
     /// </summary>
     public static class SensorIntegrationBootstrap
     {
-        public static void TryAttach(SceneModelIndex index, MetadataPanelController panel)
+        /// <param name="tipografiaDeVisor">True solo desde el arranque de Realidad Aumentada:
+        /// la sección de sensores usa los cuerpos de letra grandes del visor. El escritorio
+        /// conserva los suyos (ver la nota de tipografía en MetadataPanelController).</param>
+        public static void TryAttach(SceneModelIndex index, MetadataPanelController panel,
+                                     bool tipografiaDeVisor = false)
         {
             var serviceGo = new GameObject("~MySqlSensorPollingService");
             Object.DontDestroyOnLoad(serviceGo);
             var service = serviceGo.AddComponent<MySqlSensorPollingService>();
 
-            var section = new SensorPanelSection(service);
+            var section = new SensorPanelSection(service, tipografiaDeVisor);
             panel.SensorSectionBuilder = section.Build;
 
             // GlobalId -> IfcMetadata de los sensores EQE... del modelo, para poder refrescar el

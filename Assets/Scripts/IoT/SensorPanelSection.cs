@@ -15,13 +15,19 @@ namespace DigitalTwin.IoT
     /// </summary>
     public class SensorPanelSection
     {
-        private const float Height = 130f;
-
         private readonly MySqlSensorPollingService _service;
 
-        public SensorPanelSection(MySqlSensorPollingService service)
+        /// <summary>Tipografía del visor: cuerpos mayores y sección más alta. En el visor la
+        /// escala de render se deja en la estándar (1.0) y la legibilidad se gana en el
+        /// contenido; el escritorio conserva sus cuerpos, que ya se leían bien.</summary>
+        private readonly bool _tipografiaDeVisor;
+
+        private float Height => _tipografiaDeVisor ? 160f : 130f;
+
+        public SensorPanelSection(MySqlSensorPollingService service, bool tipografiaDeVisor = false)
         {
             _service = service;
+            _tipografiaDeVisor = tipografiaDeVisor;
         }
 
         public float Build(IfcMetadata meta, RectTransform container)
@@ -29,13 +35,16 @@ namespace DigitalTwin.IoT
             if (meta == null || string.IsNullOrEmpty(meta.globalId)) return 0f;
             if (!_service.Catalog.ByGlobalId.TryGetValue(meta.globalId, out var info)) return 0f;
 
+            bool v = _tipografiaDeVisor;
+
             var bg = RuntimeUIFactory.CreatePanel(container, "SensorBg", new Color(0.16f, 0.38f, 0.58f, 0.35f));
             RuntimeUIFactory.StretchToParent((RectTransform)bg.transform);
 
-            AddLabel(container, "Header", "SENSOR IoT · TIEMPO REAL", 12, -8, 18,
+            AddLabel(container, "Header", "SENSOR IoT · TIEMPO REAL", v ? 15 : 12, -8, v ? 22 : 18,
                 new Color(0.6f, 0.85f, 1f, 1f), FontStyle.Bold);
 
-            AddLabel(container, "Subtitle", $"{info.Name}  ·  {info.RoomName}", 13, -28, 18,
+            AddLabel(container, "Subtitle", $"{info.Name}  ·  {info.RoomName}", v ? 16 : 13,
+                v ? -34 : -28, v ? 22 : 18,
                 new Color(0.85f, 0.85f, 0.85f, 1f));
 
             string valueLine;
@@ -59,8 +68,10 @@ namespace DigitalTwin.IoT
                     : "Sin conexión con la base de datos (¿arrancado el contenedor Docker?)";
             }
 
-            AddLabel(container, "Value", valueLine, 26, -50, 34, valueColor, FontStyle.Bold);
-            AddLabel(container, "Status", statusLine, 11, -92, 30, new Color(0.75f, 0.75f, 0.75f, 1f));
+            AddLabel(container, "Value", valueLine, v ? 30 : 26, v ? -62 : -50, v ? 40 : 34,
+                valueColor, FontStyle.Bold);
+            AddLabel(container, "Status", statusLine, v ? 14 : 11, v ? -108 : -92, v ? 44 : 30,
+                new Color(0.75f, 0.75f, 0.75f, 1f));
 
             return Height;
         }

@@ -177,6 +177,60 @@ namespace DigitalTwin.Navigation
             return mejor;
         }
 
+        /// <summary>Un destino que se ofrece al usuario: el nodo final y, si el viaje debe
+        /// entrar por una puerta concreta, el índice de esa puerta (-1 si el destino es un
+        /// vecino directo).</summary>
+        public struct DestinoOfrecido
+        {
+            public int Nodo;
+            public int Via;
+        }
+
+        /// <summary>
+        /// La OFERTA de destinos desde un nodo: sus vecinos directos más, por cada vecino que
+        /// sea una puerta, el punto al que esa puerta desemboca (resuelto con la misma regla
+        /// del producto escalar que usa el tránsito).
+        ///
+        /// POR QUÉ EXISTE. El grafo de vecindad relativa es escaso a propósito (poda todo enlace
+        /// para el que existe un intermedio mejor) y las puertas, al ser nodos, absorben la
+        /// conectividad: un punto interior queda unido solo a su puerta, y su oferta visible se
+        /// reduce a «Puerta · X». Medido sobre el asset de referencia: 3 esferas ofrecían un
+        /// único destino y 10 ofrecían dos. Expandir la oferta A TRAVÉS de las puertas enseña
+        /// también la sala de destino, sin tocar la construcción del grafo y sin atravesar nada:
+        /// el viaje al destino expandido recorre la polilínea por el vano, exactamente igual que
+        /// si el usuario hubiera pulsado la puerta.
+        ///
+        /// La usa la versión inmersiva, que tiene tránsito por polilínea. El escritorio NO la
+        /// consume todavía a propósito: su desplazamiento es un segmento recto, y ofrecer el
+        /// punto tras la puerta allí significaría atravesar el tabique visualmente. Si algún día
+        /// se porta el tránsito por polilínea a escritorio, esta misma función le sirve.
+        /// </summary>
+        public static List<DestinoOfrecido> DestinosOfrecidos(NavGraphAsset grafo, int origen,
+                                                              Func<int, bool> esPuerta)
+        {
+            var resultado = new List<DestinoOfrecido>();
+            var directos = VecinosAlcanzables(grafo, origen);
+            var yaOfrecidos = new HashSet<int>(directos);
+            foreach (int v in directos)
+                resultado.Add(new DestinoOfrecido { Nodo = v, Via = -1 });
+
+            if (esPuerta == null) return resultado;
+
+            foreach (int v in directos)
+            {
+                if (!esPuerta(v)) continue;
+
+                var ruta = ResolverDestino(grafo, origen, v, esPuerta);
+                if (ruta.Count < 2) continue;                 // puerta sin continuación
+                int fin = ruta[ruta.Count - 1];
+                if (esPuerta(fin)) continue;                  // la cadena se cortó en otra puerta
+                if (fin == origen || !yaOfrecidos.Add(fin)) continue;
+
+                resultado.Add(new DestinoOfrecido { Nodo = fin, Via = v });
+            }
+            return resultado;
+        }
+
         /// <summary>Producto escalar de la mejor continuación, para poder registrarlo.</summary>
         public static float ProductoEscalarDe(NavGraphAsset grafo, int previo, int puerta, int continuacion)
         {

@@ -58,6 +58,10 @@ namespace DigitalTwin.MR
         private static bool _initialized;
         private static bool _gemeloMontado;
 
+        /// <summary>Raíz del modelo apagada mientras el selector de modo está en pantalla;
+        /// MontarGemelo la reactiva. Null si no se apagó (vía de emergencia o raíz no hallada).</summary>
+        private static GameObject _raizModeloApagadaDuranteSelector;
+
         public static bool EsEscenaMR()
         {
             string activa = SceneManager.GetActiveScene().name;
@@ -88,6 +92,11 @@ namespace DigitalTwin.MR
             }
 
             // --- Etapa A: lo imprescindible para poder preguntar -------------------------------
+
+            // El monitor de rendimiento nace ANTES que todo lo demás: en la prueba del 14-08 la
+            // única medición arrancaba con el gemelo montado y la fase del selector —donde
+            // también se notaban tirones— quedó sin números.
+            MRPerfMonitor.Crear();
 
             var index = SceneModelIndex.Build();
             ColliderBootstrapper.Setup(index);
@@ -130,12 +139,47 @@ namespace DigitalTwin.MR
             var rig = rigGo.AddComponent<MRControllerRig>();
             rig.Initialize(desplazamientoCamara);
 
+            // Mientras el usuario elige modo, el gemelo no aporta nada y SÍ cuesta: el modelo
+            // entero se estaba dibujando detrás de las tarjetas del selector (en estéreo y a
+            // resolución de visor) sin que se viera más que el vídeo de la sala. Se apaga la
+            // raíz completa y MontarGemelo la reactiva. La vía de emergencia de arriba (sin
+            // rig) no pasa por aquí a propósito: monta directamente y no debe apagarse nada.
+            var raizModelo = RaizDelModelo(index);
+            if (raizModelo != null)
+            {
+                raizModelo.SetActive(false);
+                _raizModeloApagadaDuranteSelector = raizModelo;
+                Debug.LogWarning($"[DigitalTwin][AR] Raiz del modelo '{raizModelo.name}' " +
+                                 "desactivada mientras el selector de modo este en pantalla.");
+            }
+            else
+            {
+                Debug.LogWarning("[DigitalTwin][AR] No se ha resuelto la raiz del modelo; se " +
+                                 "deja el gemelo dibujandose durante el selector (solo cuesta " +
+                                 "rendimiento, no funcionalidad).");
+            }
+
             var arranqueGo = new GameObject("~ArranqueDiferidoAR");
             Object.DontDestroyOnLoad(arranqueGo);
             var secuenciador = arranqueGo.AddComponent<MRBootSequencer>();
             secuenciador.Iniciar(index, rig, desplazamientoCamara, origenXR);
 
             _initialized = true;
+        }
+
+        /// <summary>
+        /// Raíz del modelo importado, con la misma resolución que usa
+        /// <see cref="ModelAnchorBinder"/>: subir por la jerarquía desde cualquier elemento con
+        /// metadatos hasta el objeto más alto. No se codifica el nombre del objeto del .glb,
+        /// que puede cambiar al reimportar.
+        /// </summary>
+        private static GameObject RaizDelModelo(SceneModelIndex index)
+        {
+            if (index == null || index.AllElements.Count == 0 || index.AllElements[0] == null)
+                return null;
+            Transform t = index.AllElements[0].transform;
+            while (t.parent != null) t = t.parent;
+            return t.gameObject;
         }
 
         /// <summary>
@@ -152,6 +196,19 @@ namespace DigitalTwin.MR
                 return;
             }
             _gemeloMontado = true;
+
+            // Lo primero es devolver el modelo apagado durante el selector: todo lo que sigue
+            // (oclusores, colliders de seleccion, sensores) da por hecho que la escena esta viva.
+            if (_raizModeloApagadaDuranteSelector != null)
+            {
+                _raizModeloApagadaDuranteSelector.SetActive(true);
+                Debug.LogWarning($"[DigitalTwin][AR] Raiz del modelo " +
+                                 $"'{_raizModeloApagadaDuranteSelector.name}' reactivada para el montaje.");
+                _raizModeloApagadaDuranteSelector = null;
+            }
+
+            if (MRPerfMonitor.Instancia != null)
+                MRPerfMonitor.Instancia.FijarFase($"montado ({modo})");
 
             Debug.LogWarning($"[DigitalTwin][AR] Montaje del gemelo digital iniciado (modo {modo}).");
 
@@ -201,6 +258,11 @@ namespace DigitalTwin.MR
             // escritorio la reducía a la mitad del ancho decidido (0,28 m de los 0,58) y el
             // texto quedaba por debajo del píxel físico — la borrosidad de la prueba del 13-08.
             panel.UsarAnchoCompleto();
+            // Cuerpos de letra del visor: con la escala de render en la estándar (1.0), los
+            // píxeles de legibilidad se ganan en el contenido (prueba del 14-08: el cuerpo
+            // pequeño era ilegible a escala 1.0 y solo aceptable encareciendo toda la escena
+            // a 1.4). El tamaño y la posición del panel no cambian: siguen siendo los aprobados.
+            panel.UsarTipografiaDeVisor();
             // Fondo translúcido: da sensación de espacio sin restar legibilidad al texto, que
             // sigue a opacidad completa (ver SetOpacidadFondo). Ante el usuario y a 1,3 m ocupa
             // bastante campo de visión, y en modo anclado lo que hay detrás es el edificio real.
@@ -233,7 +295,7 @@ namespace DigitalTwin.MR
             // Mismo criterio que en escritorio: disponible pero apagada por defecto.
             Visual.SolarLightingController.Crear();
 
-            IoT.SensorIntegrationBootstrap.TryAttach(index, panel);
+            IoT.SensorIntegrationBootstrap.TryAttach(index, panel, tipografiaDeVisor: true);
 
             // --- Lo específico de cada modo ---------------------------------------------------
 
@@ -366,6 +428,9 @@ namespace DigitalTwin.MR
 
                 Debug.LogWarning($"[DigitalTwin][AR] Selector de modo visible (transparencia " +
                                  $"activa: {TransparenciaActiva()}).");
+
+                if (MRPerfMonitor.Instancia != null)
+                    MRPerfMonitor.Instancia.FijarFase("selector");
 
                 MRModeSelector.Mostrar(_rig, Camera.main, modo =>
                 {

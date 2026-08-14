@@ -46,6 +46,24 @@ namespace DigitalTwin.Metadata
         private IfcMetadata _current;
         private readonly HashSet<int> _expandedIndices = new HashSet<int>();
 
+        // Tipografía y métrica vertical del contenido, en CAMPOS y no en constantes: la versión
+        // inmersiva las sube (ver UsarTipografiaDeVisor) y el escritorio conserva las suyas.
+        // Con la escala de render del visor en su valor estándar (1.0), la legibilidad se gana
+        // aquí, en el contenido, no encareciendo cada píxel de toda la aplicación.
+        private int _cuerpoPsetTitulo = 15, _cuerpoChevron = 14, _cuerpoContador = 13,
+                    _cuerpoProp = 12, _cuerpoVacio = 14;
+        private float _altoFila = RowHeight, _altoFilaProp = PropRowHeight;
+        private float _minTitulo = 30f, _maxTitulo = 90f;
+        private float _minSubtitulo = 22f, _maxSubtitulo = 60f;
+        private float _minRuta = 16f, _maxRuta = 90f;
+        private float _anchoBotonCerrar = 28f;
+        private RectTransform _closeRect;
+        private Text _closeLabel;
+
+        /// <summary>Destinos de pulsación registrados por el CONTENIDO actual del panel (los
+        /// desplegables). Se liberan en cada reconstrucción; ver ClearContent.</summary>
+        private readonly List<ClickTarget> _targetsDeContenido = new List<ClickTarget>();
+
         public IfcMetadata Current => _current;
         public event Action<IfcMetadata> OnElementShown;
         public event Action OnPanelHidden;
@@ -91,6 +109,46 @@ namespace DigitalTwin.Metadata
         }
 
         /// <summary>
+        /// Cuerpos de letra del visor: sube todos los textos del panel (cabecera, desplegables,
+        /// propiedades y botón de cerrar) y la métrica vertical que los aloja. Lo llama solo la
+        /// versión inmersiva, tras <see cref="UsarAnchoCompleto"/>.
+        ///
+        /// Por qué así y no con la escala de render: en la prueba del 14-08 el texto solo era
+        /// cómodo con la escala de render a 1.4, que encarece TODOS los píxeles de la escena
+        /// (~2× fragmentos) y no escalará con un modelo IFC mayor. La escala se queda en la
+        /// estándar del runtime (1.0) y los píxeles se gastan donde faltaban: en los glifos.
+        /// El cuerpo mínimo pasa de 11-12 px a 15-16 px de lienzo — a 4 píxeles de lienzo por
+        /// unidad y 0,58 m de ancho, unos 10 px físicos por glifo a la distancia del panel.
+        ///
+        /// El escritorio no llama a esto y conserva su tipografía exacta.
+        /// </summary>
+        public void UsarTipografiaDeVisor()
+        {
+            _titleText.fontSize = 26;
+            _subtitleText.fontSize = 18;
+            _pathText.fontSize = 15;
+            _minTitulo = 36f; _maxTitulo = 110f;
+            _minSubtitulo = 26f; _maxSubtitulo = 72f;
+            _minRuta = 20f; _maxRuta = 110f;
+
+            _anchoBotonCerrar = 36f;
+            if (_closeRect != null) _closeRect.sizeDelta = new Vector2(36f, 36f);
+            if (_closeLabel != null) _closeLabel.fontSize = 22;
+
+            _cuerpoPsetTitulo = 19; _cuerpoChevron = 18; _cuerpoContador = 16;
+            _cuerpoProp = 16; _cuerpoVacio = 17;
+            _altoFila = 38f; _altoFilaProp = 28f;
+
+            // Normalmente se llama antes del primer Show; si hubiera contenido, se rehace con
+            // la métrica nueva para no dejar una mezcla de cuerpos.
+            if (_current != null)
+            {
+                RecolocarCabecera();
+                RebuildContent(_current);
+            }
+        }
+
+        /// <summary>
         /// Ajusta la opacidad del fondo del panel dejando el texto intacto.
         ///
         /// Se expone como método y no como un simple color configurable porque la transparencia
@@ -131,10 +189,13 @@ namespace DigitalTwin.Metadata
             float y = Padding;
 
             // El título deja hueco a la derecha para el botón de cerrar; los otros dos usan todo
-            // el ancho disponible.
-            y += ColocarBloque(_titleRect, _titleText, y, anchoExtra: -34f, minimo: 30f, maximo: 90f) + Separacion;
-            y += ColocarBloque(_subtitleRect, _subtitleText, y, anchoExtra: 0f, minimo: 22f, maximo: 60f) + Separacion;
-            y += ColocarBloque(_pathRect, _pathText, y, anchoExtra: 0f, minimo: 16f, maximo: 90f) + Padding;
+            // el ancho disponible. Mínimos y máximos en campos: crecen con la tipografía del visor.
+            y += ColocarBloque(_titleRect, _titleText, y, anchoExtra: -(_anchoBotonCerrar + 6f),
+                               minimo: _minTitulo, maximo: _maxTitulo) + Separacion;
+            y += ColocarBloque(_subtitleRect, _subtitleText, y, anchoExtra: 0f,
+                               minimo: _minSubtitulo, maximo: _maxSubtitulo) + Separacion;
+            y += ColocarBloque(_pathRect, _pathText, y, anchoExtra: 0f,
+                               minimo: _minRuta, maximo: _maxRuta) + Padding;
 
             _viewport.offsetMax = new Vector2(-Padding, -y);
         }
@@ -168,16 +229,18 @@ namespace DigitalTwin.Metadata
             var bgRect = (RectTransform)_panelRoot.Find("Background");
             RuntimeUIFactory.StretchToParent(bgRect);
 
-            // Botón cerrar
-            var closeRect = RuntimeUIFactory.CreateRect(_panelRoot, "CloseButton");
+            // Botón cerrar. Su registro de pulsación es PERMANENTE (el botón vive lo que el
+            // panel); los del contenido, en cambio, se liberan en cada reconstrucción.
+            _closeRect = RuntimeUIFactory.CreateRect(_panelRoot, "CloseButton");
+            var closeRect = _closeRect;
             closeRect.anchorMin = closeRect.anchorMax = new Vector2(1, 1);
             closeRect.pivot = new Vector2(1, 1);
             closeRect.anchoredPosition = new Vector2(-Padding, -Padding);
-            closeRect.sizeDelta = new Vector2(28, 28);
+            closeRect.sizeDelta = new Vector2(_anchoBotonCerrar, _anchoBotonCerrar);
             var closeImg = RuntimeUIFactory.CreatePanel(closeRect, "Bg", new Color(1, 1, 1, 0.08f));
             RuntimeUIFactory.StretchToParent((RectTransform)closeImg.transform);
-            var closeLabel = RuntimeUIFactory.CreateText(closeRect, "X", "✕", 18, TextAnchor.MiddleCenter, Color.white);
-            RuntimeUIFactory.StretchToParent((RectTransform)closeLabel.transform);
+            _closeLabel = RuntimeUIFactory.CreateText(closeRect, "X", "✕", 18, TextAnchor.MiddleCenter, Color.white);
+            RuntimeUIFactory.StretchToParent((RectTransform)_closeLabel.transform);
             ClickRouter.Instance.Register(closeRect, Hide, sortOrder: 20, isActive: () => _panelRoot.gameObject.activeSelf);
 
             // Cabecera
@@ -269,6 +332,15 @@ namespace DigitalTwin.Metadata
 
         private void ClearContent()
         {
+            // Liberar los destinos de pulsación ANTES de destruir sus rectángulos. Sin esto,
+            // cada reconstrucción (cada clic en un desplegable y cada lectura nueva del sensor
+            // mostrado) dejaba en ClickRouter un registro muerto por desplegable: el enrutador
+            // los ignoraba (isActive da falso sobre un objeto destruido) pero la lista crecía
+            // sin límite toda la sesión. El contador targetsUI del monitor [Perf] existe para
+            // delatar exactamente esta clase de fuga.
+            foreach (var t in _targetsDeContenido) ClickRouter.Instance.Unregister(t);
+            _targetsDeContenido.Clear();
+
             for (int i = _content.childCount - 1; i >= 0; i--)
                 Destroy(_content.GetChild(i).gameObject);
         }
@@ -294,14 +366,14 @@ namespace DigitalTwin.Metadata
 
             if (meta.propertySets == null || meta.propertySets.Count == 0)
             {
-                var emptyText = RuntimeUIFactory.CreateText(_content, "Empty", "Este elemento no tiene Psets asociados.", 14, TextAnchor.UpperLeft, new Color(0.7f, 0.7f, 0.7f, 1f));
+                var emptyText = RuntimeUIFactory.CreateText(_content, "Empty", "Este elemento no tiene Psets asociados.", _cuerpoVacio, TextAnchor.UpperLeft, new Color(0.7f, 0.7f, 0.7f, 1f));
                 var emptyRect = (RectTransform)emptyText.transform;
                 emptyRect.anchorMin = new Vector2(0, 1);
                 emptyRect.anchorMax = new Vector2(1, 1);
                 emptyRect.pivot = new Vector2(0, 1);
                 emptyRect.anchoredPosition = new Vector2(0, -y);
-                emptyRect.sizeDelta = new Vector2(0, 24);
-                y += 24f;
+                emptyRect.sizeDelta = new Vector2(0, _cuerpoVacio + 12f);
+                y += _cuerpoVacio + 12f;
             }
             else
             {
@@ -322,7 +394,7 @@ namespace DigitalTwin.Metadata
             header.anchorMax = new Vector2(1, 1);
             header.pivot = new Vector2(0, 1);
             header.anchoredPosition = new Vector2(0, -y);
-            header.sizeDelta = new Vector2(0, RowHeight);
+            header.sizeDelta = new Vector2(0, _altoFila);
 
             var headerBg = RuntimeUIFactory.CreatePanel(header, "Bg", new Color(1, 1, 1, 0.06f));
             RuntimeUIFactory.StretchToParent((RectTransform)headerBg.transform);
@@ -332,17 +404,17 @@ namespace DigitalTwin.Metadata
             chevronRect.anchorMax = new Vector2(0, 1);
             chevronRect.pivot = new Vector2(0, 0.5f);
             chevronRect.anchoredPosition = new Vector2(6, 0);
-            chevronRect.sizeDelta = new Vector2(20, 0);
-            RuntimeUIFactory.CreateText(chevronRect, "Text", expanded ? "▾" : "▸", 14, TextAnchor.MiddleCenter, Color.white);
+            chevronRect.sizeDelta = new Vector2(_cuerpoChevron + 6f, 0);
+            RuntimeUIFactory.CreateText(chevronRect, "Text", expanded ? "▾" : "▸", _cuerpoChevron, TextAnchor.MiddleCenter, Color.white);
             RuntimeUIFactory.StretchToParent((RectTransform)chevronRect.Find("Text"));
 
             var titleRect = RuntimeUIFactory.CreateRect(header, "Title");
             titleRect.anchorMin = new Vector2(0, 0);
             titleRect.anchorMax = new Vector2(1, 1);
             titleRect.pivot = new Vector2(0, 0.5f);
-            titleRect.anchoredPosition = new Vector2(28, 0);
+            titleRect.anchoredPosition = new Vector2(_cuerpoChevron + 14f, 0);
             titleRect.sizeDelta = new Vector2(-100, 0);
-            var titleText = RuntimeUIFactory.CreateText(titleRect, "Text", group.psetName, 15, TextAnchor.MiddleLeft, Color.white, FontStyle.Bold);
+            var titleText = RuntimeUIFactory.CreateText(titleRect, "Text", group.psetName, _cuerpoPsetTitulo, TextAnchor.MiddleLeft, Color.white, FontStyle.Bold);
             RuntimeUIFactory.StretchToParent((RectTransform)titleText.transform);
 
             var countRect = RuntimeUIFactory.CreateRect(header, "Count");
@@ -351,13 +423,13 @@ namespace DigitalTwin.Metadata
             countRect.pivot = new Vector2(1, 0.5f);
             countRect.anchoredPosition = new Vector2(-10, 0);
             countRect.sizeDelta = new Vector2(60, 0);
-            var countText = RuntimeUIFactory.CreateText(countRect, "Text", $"{group.properties.Count}", 13, TextAnchor.MiddleRight, new Color(0.7f, 0.7f, 0.7f, 1f));
+            var countText = RuntimeUIFactory.CreateText(countRect, "Text", $"{group.properties.Count}", _cuerpoContador, TextAnchor.MiddleRight, new Color(0.7f, 0.7f, 0.7f, 1f));
             RuntimeUIFactory.StretchToParent((RectTransform)countText.transform);
 
-            ClickRouter.Instance.Register(header, () => ToggleFoldout(index), sortOrder: 15,
-                isActive: () => header != null && header.gameObject.activeInHierarchy);
+            _targetsDeContenido.Add(ClickRouter.Instance.Register(header, () => ToggleFoldout(index),
+                sortOrder: 15, isActive: () => header != null && header.gameObject.activeInHierarchy));
 
-            y += RowHeight;
+            y += _altoFila;
 
             if (expanded)
             {
@@ -368,7 +440,7 @@ namespace DigitalTwin.Metadata
                     row.anchorMax = new Vector2(1, 1);
                     row.pivot = new Vector2(0, 1);
                     row.anchoredPosition = new Vector2(0, -y);
-                    row.sizeDelta = new Vector2(0, PropRowHeight);
+                    row.sizeDelta = new Vector2(0, _altoFilaProp);
 
                     var keyRect = RuntimeUIFactory.CreateRect(row, "Key");
                     keyRect.anchorMin = new Vector2(0, 0);
@@ -376,7 +448,7 @@ namespace DigitalTwin.Metadata
                     keyRect.pivot = new Vector2(0, 0.5f);
                     keyRect.anchoredPosition = new Vector2(Indent, 0);
                     keyRect.sizeDelta = new Vector2(-Indent, 0);
-                    var keyText = RuntimeUIFactory.CreateText(keyRect, "Text", prop.key, 12, TextAnchor.MiddleLeft, new Color(0.68f, 0.78f, 0.95f, 1f));
+                    var keyText = RuntimeUIFactory.CreateText(keyRect, "Text", prop.key, _cuerpoProp, TextAnchor.MiddleLeft, new Color(0.68f, 0.78f, 0.95f, 1f));
                     RuntimeUIFactory.StretchToParent((RectTransform)keyText.transform);
 
                     var valRect = RuntimeUIFactory.CreateRect(row, "Value");
@@ -385,10 +457,10 @@ namespace DigitalTwin.Metadata
                     valRect.pivot = new Vector2(0, 0.5f);
                     valRect.anchoredPosition = new Vector2(4, 0);
                     valRect.sizeDelta = new Vector2(-4, 0);
-                    var valText = RuntimeUIFactory.CreateText(valRect, "Text", prop.value ?? "—", 12, TextAnchor.MiddleLeft, Color.white);
+                    var valText = RuntimeUIFactory.CreateText(valRect, "Text", prop.value ?? "—", _cuerpoProp, TextAnchor.MiddleLeft, Color.white);
                     RuntimeUIFactory.StretchToParent((RectTransform)valText.transform);
 
-                    y += PropRowHeight;
+                    y += _altoFilaProp;
                 }
             }
 

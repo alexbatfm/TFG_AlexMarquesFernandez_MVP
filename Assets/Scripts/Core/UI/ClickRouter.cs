@@ -55,6 +55,12 @@ namespace DigitalTwin.UI
 
         private readonly List<ClickTarget> _targets = new List<ClickTarget>();
 
+        /// <summary>Cuántos destinos de pulsación hay registrados ahora mismo. Es un contador de
+        /// diagnóstico: la lista se recorre entera en cada pulsación, así que un número que solo
+        /// crece delata a un consumidor que registra sin liberar (fuga de registro, no de
+        /// memoria). Lo vuelca el monitor de rendimiento del visor.</summary>
+        public static int NumTargetsRegistrados => _instance == null ? 0 : _instance._targets.Count;
+
         public ClickTarget Register(RectTransform rect, Action onClick, int sortOrder = 0, Func<bool> isActive = null)
         {
             var t = new ClickTarget { Rect = rect, OnClick = onClick, SortOrder = sortOrder, IsActive = isActive };

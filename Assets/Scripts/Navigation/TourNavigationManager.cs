@@ -169,6 +169,7 @@ namespace DigitalTwin.Navigation
             CargarGrafo();
             IncorporarNodosDelGrafoQueNoSonEsferas(index);
             VerificarCoberturaDelGrafo();
+            AplicarEtiquetasUnicas();
             CalcularOrbesPrincipales();
             BuildUI();
 
@@ -293,6 +294,22 @@ namespace DigitalTwin.Navigation
         }
 
         /// <summary>
+        /// Sustituye los nombres repetidos por sus variantes con ordinal («Comedor · 1/2»),
+        /// las mismas que usa la versión inmersiva. Solo cambia el TEXTO de los indicadores en
+        /// las salas con varios puntos; la selección de destinos no interviene aquí.
+        /// </summary>
+        private void AplicarEtiquetasUnicas()
+        {
+            var metas = new List<IfcMetadata>(_points.Count);
+            foreach (var p in _points) if (p.Meta != null) metas.Add(p.Meta);
+
+            var etiquetas = ConstruirEtiquetasUnicas(metas);
+            foreach (var p in _points)
+                if (p.Meta != null && etiquetas.TryGetValue(p.Meta.globalId, out string etiqueta))
+                    p.DisplayName = etiqueta;
+        }
+
+        /// <summary>
         /// Elige un punto representativo por sala: el más próximo al centro geométrico de los
         /// puntos de esa sala.
         ///
@@ -360,6 +377,54 @@ namespace DigitalTwin.Navigation
                 return true;
             }
             return false;
+        }
+
+        /// <summary>
+        /// Etiquetas ÚNICAS para una colección de nodos: donde varios comparten el nombre base
+        /// (dos puntos de la misma sala se llaman ambos «Comedor»; hay salas con hasta trece),
+        /// se les añade un ordinal estable «Comedor · 1», «Comedor · 2» por orden de etiqueta
+        /// IFC. Sin esto, el registro de la prueba del 14-08 mostraba «Transito hacia 'Comedor'»
+        /// estando en «Comedor», y el usuario no podía saber a cuál de los dos iba.
+        ///
+        /// Es compartida por las dos versiones (los indicadores de escritorio y los carteles del
+        /// visor deben decir lo mismo), y devuelve un mapa GlobalId → etiqueta para que cada
+        /// consumidor lo aplique a su presentación.
+        /// </summary>
+        public static Dictionary<string, string> ConstruirEtiquetasUnicas(IEnumerable<IfcMetadata> metas)
+        {
+            var porNombre = new Dictionary<string, List<IfcMetadata>>();
+            foreach (var meta in metas)
+            {
+                if (meta == null || string.IsNullOrEmpty(meta.globalId)) continue;
+                string nombre = BuildDisplayName(meta);
+                if (!porNombre.TryGetValue(nombre, out var lista))
+                    porNombre[nombre] = lista = new List<IfcMetadata>();
+                lista.Add(meta);
+            }
+
+            var etiquetas = new Dictionary<string, string>();
+            foreach (var par in porNombre)
+            {
+                if (par.Value.Count == 1)
+                {
+                    etiquetas[par.Value[0].globalId] = par.Key;
+                    continue;
+                }
+
+                // Orden estable por etiqueta IFC numérica (la de Revit), no por orden de
+                // aparición: así el «· 2» es el mismo punto en todas las ejecuciones.
+                par.Value.Sort((a, b) =>
+                {
+                    bool na = long.TryParse(a.ifcTag, out long ta);
+                    bool nb = long.TryParse(b.ifcTag, out long tb);
+                    if (na && nb) return ta.CompareTo(tb);
+                    if (na != nb) return na ? -1 : 1;
+                    return string.CompareOrdinal(a.globalId, b.globalId);
+                });
+                for (int i = 0; i < par.Value.Count; i++)
+                    etiquetas[par.Value[i].globalId] = $"{par.Key} · {i + 1}";
+            }
+            return etiquetas;
         }
 
         /// <summary>

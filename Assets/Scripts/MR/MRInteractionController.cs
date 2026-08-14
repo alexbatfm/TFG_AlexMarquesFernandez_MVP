@@ -34,22 +34,20 @@ namespace DigitalTwin.MR
     /// son elementos del edificio, y es la misma regla que aplica ElementSelector en escritorio.
     ///
     /// RENDIMIENTO (medido, no supuesto). Tras la prueba del 2026-08-13 («la selección va
-    /// lenta») este componente se instrumenta a sí mismo: cronometra su propio coste por
-    /// fotograma y lo vuelca al registro cada diez segundos junto con el tiempo de fotograma
-    /// total, para que la próxima sesión de visor entregue números en vez de sensaciones. Las
-    /// dos mejoras aplicadas de antemano no cambian el comportamiento: el trazado usa un búfer
-    /// fijo (RaycastNonAlloc, cero basura por fotograma) y los metadatos se resuelven por
-    /// diccionario collider→elemento construido una sola vez, en lugar de subir por la
-    /// jerarquía en cada impacto de cada fotograma.
+    /// lenta») este componente cronometra su propio coste por fotograma. El VOLCADO ya no es
+    /// suyo: lo reporta a <see cref="MRPerfMonitor"/>, que existe desde el primer fotograma del
+    /// arranque —este controlador nace con el gemelo montado, y medir solo desde ahí dejaba la
+    /// fase del selector sin números (prueba del 2026-08-14)—. Las dos mejoras aplicadas de
+    /// antemano no cambian el comportamiento: el trazado usa un búfer fijo (RaycastNonAlloc,
+    /// cero basura por fotograma) y los metadatos se resuelven por diccionario
+    /// collider→elemento construido una sola vez, en lugar de subir por la jerarquía en cada
+    /// impacto de cada fotograma.
     /// </summary>
     public class MRInteractionController : MonoBehaviour
     {
         /// <summary>Velocidad de desplazamiento del contenido del panel con el joystick, en
         /// unidades de layout por segundo a palanca completa.</summary>
         private const float VelocidadScrollPanel = 700f;
-
-        /// <summary>Cada cuántos segundos se vuelca la medición de rendimiento.</summary>
-        private const float SegundosEntreInformesPerf = 10f;
 
         private MRControllerRig _rig;
         private MetadataPanelController _panel;
@@ -77,11 +75,8 @@ namespace DigitalTwin.MR
         private readonly RaycastHit[] _impactos = new RaycastHit[64];
         private bool _avisadoBufferLleno;
 
-        // Medición: media móvil exponencial del coste propio y del fotograma completo.
-        private float _mediaMsSeleccion;
-        private float _mediaMsFotograma;
-        private float _mediaImpactos;
-        private float _proximoInformePerf;
+        // Medición: el coste propio se cronometra aquí y se agrega/vuelca en MRPerfMonitor.
+        private int _impactosDelFotograma;
         private readonly System.Diagnostics.Stopwatch _crono = new System.Diagnostics.Stopwatch();
 
         public void Initialize(MRControllerRig rig, MetadataPanelController panel,
@@ -95,7 +90,6 @@ namespace DigitalTwin.MR
             _camara = Camera.main;
 
             ConstruirCacheDeColliders();
-            _proximoInformePerf = Time.unscaledTime + SegundosEntreInformesPerf;
         }
 
         /// <summary>
@@ -121,11 +115,13 @@ namespace DigitalTwin.MR
         private void Update()
         {
             _crono.Restart();
+            _impactosDelFotograma = 0;
 
             ProcesarRayo();
 
             _crono.Stop();
-            AcumularYVolcarPerf((float)_crono.Elapsed.TotalMilliseconds);
+            MRPerfMonitor.ReportarSeleccion((float)_crono.Elapsed.TotalMilliseconds,
+                                            _impactosDelFotograma);
         }
 
         private void ProcesarRayo()
@@ -188,8 +184,7 @@ namespace DigitalTwin.MR
                                  "impactos; se procesan solo esos. Si esto aparece a menudo, subir " +
                                  "el tamano del bufer.");
             }
-            _mediaImpactos = Mathf.Lerp(_mediaImpactos <= 0f ? numImpactos : _mediaImpactos,
-                                        numImpactos, 0.05f);
+            _impactosDelFotograma = numImpactos;
 
             System.Array.Sort(_impactos, 0, numImpactos, ComparadorDistancia.Instancia);
 
@@ -265,27 +260,5 @@ namespace DigitalTwin.MR
             public int Compare(RaycastHit a, RaycastHit b) => a.distance.CompareTo(b.distance);
         }
 
-        /// <summary>
-        /// Acumula medias móviles y las vuelca cada diez segundos. Media exponencial y no
-        /// instantánea: un pico aislado no debe leerse como estado.
-        /// </summary>
-        private void AcumularYVolcarPerf(float msSeleccion)
-        {
-            const float Alfa = 0.05f;
-            float msFotograma = Time.unscaledDeltaTime * 1000f;
-
-            _mediaMsSeleccion = _mediaMsSeleccion <= 0f
-                ? msSeleccion : Mathf.Lerp(_mediaMsSeleccion, msSeleccion, Alfa);
-            _mediaMsFotograma = _mediaMsFotograma <= 0f
-                ? msFotograma : Mathf.Lerp(_mediaMsFotograma, msFotograma, Alfa);
-
-            if (Time.unscaledTime < _proximoInformePerf) return;
-            _proximoInformePerf = Time.unscaledTime + SegundosEntreInformesPerf;
-
-            float fps = _mediaMsFotograma > 0.01f ? 1000f / _mediaMsFotograma : 0f;
-            Debug.LogWarning($"[DigitalTwin][AR][Perf] fotograma medio {_mediaMsFotograma:0.0} ms " +
-                             $"({fps:0} fps); seleccion media {_mediaMsSeleccion:0.00} ms; " +
-                             $"impactos medios del rayo {_mediaImpactos:0.0}.");
-        }
     }
 }

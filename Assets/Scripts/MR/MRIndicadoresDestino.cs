@@ -133,8 +133,10 @@ namespace DigitalTwin.MR
             // Mismo mecanismo de lienzo en espacio de mundo que el panel de metadatos, a escala
             // de cartel. La resolución interna alta y la escala a metros mantienen el texto
             // nítido (ver RuntimeUIFactory.CreateWorldCanvas).
+            // 185 px de alto: hueco para la etiqueta a cuerpo 30 en dos líneas (los nombres
+            // con ordinal, «Sala Reuniones · 2», no caben en una a ese cuerpo).
             var canvas = DigitalTwin.UI.RuntimeUIFactory.CreateWorldCanvas(
-                $"~IndicadorDestino_{indice}", anchoPx: 240f, altoPx: 170f, anchoMetros: AnchoMetros);
+                $"~IndicadorDestino_{indice}", anchoPx: 240f, altoPx: 185f, anchoMetros: AnchoMetros);
             var raiz = canvas.gameObject;
             raiz.transform.SetParent(transform, true);
 
@@ -161,9 +163,11 @@ namespace DigitalTwin.MR
             etiquetaRect.anchorMax = new Vector2(0.5f, 1f);
             etiquetaRect.pivot = new Vector2(0.5f, 1f);
             etiquetaRect.anchoredPosition = new Vector2(0f, -96f);
-            etiquetaRect.sizeDelta = new Vector2(230f, 64f);
+            etiquetaRect.sizeDelta = new Vector2(230f, 76f);
+            // Cuerpo 30 (antes 26): en el visor, con la escala de render estándar (1.0), el 26
+            // quedaba en el límite de lo legible a la distancia típica de un cartel (3-6 m).
             var etiqueta = DigitalTwin.UI.RuntimeUIFactory.CreateText(
-                etiquetaRect, "Texto", "", 26, TextAnchor.UpperCenter, Color.white, FontStyle.Bold);
+                etiquetaRect, "Texto", "", 30, TextAnchor.UpperCenter, Color.white, FontStyle.Bold);
             DigitalTwin.UI.RuntimeUIFactory.StretchToParent((RectTransform)etiqueta.transform);
 
             // Volumen para el rayo del mando. Disparador: no interviene en ninguna simulación

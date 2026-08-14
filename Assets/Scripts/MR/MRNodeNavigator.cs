@@ -54,12 +54,20 @@ namespace DigitalTwin.MR
         private readonly HashSet<int> _vecinosDelNodoActual = new HashSet<int>();
 
         /// <summary>
-        /// Destinos actualmente OFRECIDOS al usuario (los que tienen cartel). Normalmente
-        /// coincide con los vecinos del grafo; cuando ninguno es utilizable entra la salida de
-        /// emergencia (ver RefrescarIndicadores) y este conjunto contiene los sustitutos. El
-        /// viaje valida contra este conjunto: lo que se ofrece se puede pulsar, y nada más.
+        /// Destinos actualmente OFRECIDOS al usuario (los que tienen cartel), con la puerta por
+        /// la que se entra a cada uno (la «vía»; -1 si el destino es un vecino directo). La
+        /// oferta son los vecinos del grafo EXPANDIDOS a través de las puertas
+        /// (<see cref="NavReachability.DestinosOfrecidos"/>): un vecino-puerta aporta además la
+        /// sala a la que desemboca. Cuando ningún destino es utilizable entra la salida de
+        /// emergencia (ver RefrescarIndicadores) y este diccionario contiene los sustitutos.
+        /// El viaje valida contra este conjunto: lo que se ofrece se puede pulsar, y nada más.
         /// </summary>
-        private readonly HashSet<int> _destinosOfrecidos = new HashSet<int>();
+        private readonly Dictionary<int, int> _destinosOfrecidos = new Dictionary<int, int>();
+
+        /// <summary>Etiqueta única por nodo (índice de grafo → nombre con sufijo « · n» si el
+        /// nombre visible se repite). Mismo criterio que el escritorio: sin esto, dos nodos de
+        /// la misma sala («Comedor» y «Comedor») producen trazas y carteles indistinguibles.</summary>
+        private Dictionary<int, string> _etiquetaUnicaPorNodo;
 
         /// <summary>Cuántos destinos garantiza la salida de emergencia. Es el mismo mínimo que
         /// el criterio de proximidad de escritorio (MinHotspotsAlwaysShown): quedarse sin
@@ -111,6 +119,18 @@ namespace DigitalTwin.MR
                                  "grafo no corresponden a ningun elemento de la escena. Suele " +
                                  "significar que el modelo se reimporto con GlobalId distintos: " +
                                  "regenera el grafo (Tools > Generar grafo de navegacion).");
+
+            // Etiquetas únicas: mismo criterio (y misma función) que el escritorio. Sin esto,
+            // dos puntos de la misma sala se llaman igual y el registro muestra tránsitos
+            // «Comedor → Comedor» imposibles de interpretar (prueba del 14-08).
+            var metasDelGrafo = new List<IfcMetadata>(_metaPorNodo.Length);
+            foreach (var m in _metaPorNodo) if (m != null) metasDelGrafo.Add(m);
+            var porGlobalIdEtiqueta = TourNavigationManager.ConstruirEtiquetasUnicas(metasDelGrafo);
+            _etiquetaUnicaPorNodo = new Dictionary<int, string>();
+            for (int i = 0; i < _grafo.Nodos.Count; i++)
+                if (_metaPorNodo[i] != null &&
+                    porGlobalIdEtiqueta.TryGetValue(_metaPorNodo[i].globalId, out string etiqueta))
+                    _etiquetaUnicaPorNodo[i] = etiqueta;
 
             Disponible = true;
             Debug.LogWarning($"[DigitalTwin][AR] Navegacion por nodos: grafo cargado " +
@@ -198,7 +218,7 @@ namespace DigitalTwin.MR
         public bool EsDestinoOfrecido(int indiceNodo)
         {
             if (!Disponible || _indiceNodoActual < 0) return false;
-            return _destinosOfrecidos.Contains(indiceNodo);
+            return _destinosOfrecidos.ContainsKey(indiceNodo);
         }
 
         /// <summary>¿Corta el rayo el cartel de algún destino alcanzable?</summary>
@@ -225,7 +245,7 @@ namespace DigitalTwin.MR
             }
             if (indiceDestino == _indiceNodoActual) return false;
 
-            if (!EsDestinoOfrecido(indiceDestino))
+            if (!_destinosOfrecidos.TryGetValue(indiceDestino, out int via))
             {
                 // La imposición del grafo, en la capa de navegación y no solo en la visual:
                 // aunque el rayo alcance la esfera de un punto lejano, sin arista (ni cartel de
@@ -236,13 +256,26 @@ namespace DigitalTwin.MR
                 return false;
             }
 
-            var ruta = NavReachability.ResolverDestino(_grafo, _indiceNodoActual, indiceDestino,
-                                                       EsPuerta);
+            // Un destino expandido (vía >= 0) se alcanza pulsando SU PUERTA en el resolutor:
+            // la ruta resultante es puerta → continuación, exactamente la que habría producido
+            // pulsar la puerta, así que el tránsito por polilínea y el giro no cambian.
+            var ruta = via >= 0
+                ? NavReachability.ResolverDestino(_grafo, _indiceNodoActual, via, EsPuerta)
+                : NavReachability.ResolverDestino(_grafo, _indiceNodoActual, indiceDestino, EsPuerta);
             if (ruta.Count == 0)
             {
                 Debug.LogWarning("[DigitalTwin][AR] La resolucion del destino devolvio una ruta " +
                                  "vacia; no se viaja.");
                 return false;
+            }
+            if (via >= 0 && ruta[ruta.Count - 1] != indiceDestino)
+            {
+                // La resolución por producto escalar es determinista, así que esto solo puede
+                // pasar si el grafo cambió entre el refresco y la pulsación. Se viaja igualmente
+                // a donde desemboca la puerta, pero nunca en silencio.
+                Debug.LogWarning($"[DigitalTwin][AR] El destino expandido '{Etiqueta(indiceDestino)}' " +
+                                 $"via puerta '{Etiqueta(via)}' resolvio hacia " +
+                                 $"'{Etiqueta(ruta[ruta.Count - 1])}'; se viaja a este ultimo.");
             }
 
             // Registro del tránsito por puertas: nodo a nodo, con el producto escalar que
@@ -282,21 +315,34 @@ namespace DigitalTwin.MR
         {
             if (!Disponible || _indiceNodoActual < 0) return;
 
-            // La única fuente de alcanzabilidad: el mismo ayudante que consume el escritorio.
+            // La única fuente de alcanzabilidad: el mismo ayudante que consume el escritorio,
+            // ampliado con la expansión a través de puertas (un vecino-puerta ofrece además la
+            // sala a la que desemboca; el viaje entra por esa puerta con la polilínea normal).
             var vecinos = NavReachability.VecinosAlcanzables(_grafo, _indiceNodoActual);
             _vecinosDelNodoActual.Clear();
             foreach (int v in vecinos) _vecinosDelNodoActual.Add(v);
 
-            var destinos = new List<MRIndicadoresDestino.Destino>(vecinos.Count);
+            var oferta = NavReachability.DestinosOfrecidos(_grafo, _indiceNodoActual, EsPuerta);
+            var destinos = new List<MRIndicadoresDestino.Destino>(oferta.Count);
+            var viaPorNodo = new Dictionary<int, int>(oferta.Count);
             int omitidos = 0;
-            foreach (int v in vecinos)
+            int expandidos = 0;
+            foreach (var o in oferta)
             {
-                if (_metaPorNodo[v] == null) { omitidos++; continue; }
+                if (_metaPorNodo[o.Nodo] == null) { omitidos++; continue; }
+                if (o.Via >= 0)
+                {
+                    // Un destino expandido cuyo cartel caería sobre el de otro ofrecido no
+                    // aporta: se conserva igualmente porque su cartel es la única mención de la
+                    // sala de destino, y el hueco sobre el dintel de su puerta lo separa.
+                    expandidos++;
+                }
+                viaPorNodo[o.Nodo] = o.Via;
                 destinos.Add(new MRIndicadoresDestino.Destino
                 {
-                    IndiceNodo = v,
-                    Posicion = PosicionDeCartel(v),
-                    Etiqueta = Etiqueta(v)
+                    IndiceNodo = o.Nodo,
+                    Posicion = PosicionDeCartel(o.Nodo, o.Via),
+                    Etiqueta = Etiqueta(o.Nodo)
                 });
             }
 
@@ -311,6 +357,7 @@ namespace DigitalTwin.MR
                 var sustitutos = NodosMasCercanos(MinimoDestinosGarantizados);
                 foreach (int s in sustitutos)
                 {
+                    viaPorNodo[s] = -1;
                     destinos.Add(new MRIndicadoresDestino.Destino
                     {
                         IndiceNodo = s,
@@ -325,12 +372,14 @@ namespace DigitalTwin.MR
             }
 
             _destinosOfrecidos.Clear();
-            foreach (var d in destinos) _destinosOfrecidos.Add(d.IndiceNodo);
+            foreach (var d in destinos)
+                _destinosOfrecidos[d.IndiceNodo] = viaPorNodo.TryGetValue(d.IndiceNodo, out int via) ? via : -1;
 
             if (_indicadores != null) _indicadores.Mostrar(destinos);
             Debug.LogWarning($"[DigitalTwin][AR] Indicadores: {destinos.Count} destinos ofrecidos " +
-                             $"desde '{Etiqueta(_indiceNodoActual)}'" +
-                             (omitidos > 0 ? $" ({omitidos} nodos del grafo sin elemento en escena)." : "."));
+                             $"desde '{Etiqueta(_indiceNodoActual)}' (grado {vecinos.Count} en el grafo, " +
+                             $"{expandidos} expandidos a traves de puertas" +
+                             (omitidos > 0 ? $", {omitidos} nodos sin elemento en escena)." : ")."));
         }
 
         /// <summary>
@@ -354,6 +403,11 @@ namespace DigitalTwin.MR
             return resultado;
         }
 
+        /// <summary>Separación vertical entre el cartel de una puerta y el del destino expandido
+        /// que desemboca por ella. El cartel mide ~0,35 m de alto en mundo (lienzo de 185 px a
+        /// 0,45 m de ancho); este hueco los deja apilados sin solaparse.</summary>
+        private const float SeparacionCartelExpandido = 0.45f;
+
         /// <summary>
         /// Punto de anclaje del CARTEL de un nodo, que no siempre es su punto de viaje.
         ///
@@ -363,9 +417,18 @@ namespace DigitalTwin.MR
         /// del 2026-08-13 un punto de baño rodeado solo de puertas pareciera no tener salidas.
         /// El cartel de una puerta se cuelga sobre su dintel (tope del volumen), donde flota
         /// libre y se ve desde ambos lados.
+        ///
+        /// Un destino EXPANDIDO (se llega por la puerta <paramref name="via"/>) tiene el mismo
+        /// problema agravado: su punto de viaje está en la sala de al lado y los oclusores de
+        /// profundidad taparían el cartel entero. Su cartel se apila SOBRE el de su puerta,
+        /// donde el usuario puede verlo y donde se lee como lo que es: «esta puerta desemboca
+        /// ahí».
         /// </summary>
-        private Vector3 PosicionDeCartel(int indiceNodo)
+        private Vector3 PosicionDeCartel(int indiceNodo, int via = -1)
         {
+            if (via >= 0)
+                return PosicionDeCartel(via) + Vector3.up * SeparacionCartelExpandido;
+
             var meta = MetaDe(indiceNodo);
             if (meta != null && meta.ifcType == "IfcDoor")
             {
@@ -577,6 +640,13 @@ namespace DigitalTwin.MR
 
         private string Etiqueta(int indiceNodo)
         {
+            // Primero la etiqueta única («Comedor · 2»): sin el ordinal, dos nodos de la misma
+            // sala son indistinguibles en carteles y trazas («Transito hacia 'Comedor'» estando
+            // en Comedor, prueba del 14-08).
+            if (_etiquetaUnicaPorNodo != null &&
+                _etiquetaUnicaPorNodo.TryGetValue(indiceNodo, out string unica))
+                return unica;
+
             var meta = MetaDe(indiceNodo);
             if (meta != null) return TourNavigationManager.BuildDisplayName(meta);
             return _grafo != null && indiceNodo >= 0 && indiceNodo < _grafo.Nodos.Count
