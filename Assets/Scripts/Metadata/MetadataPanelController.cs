@@ -156,6 +156,36 @@ namespace DigitalTwin.Metadata
         }
 
         /// <summary>
+        /// Pie de ayuda del visor: los tres gestos del panel que estaban implementados y NO
+        /// dichos en ninguna parte — cerrar con un segundo disparo sobre el mismo elemento,
+        /// desplegar y plegar los conjuntos pulsándolos, y desplazar con el joystick. La
+        /// aplicación tiene pocas funciones y eso permite explicarlas todas dentro, sin manual:
+        /// lo propio de un elemento se dice en ese elemento, y este pie es consultable siempre
+        /// que la ficha esté abierta sin estorbar (una franja al fondo, fuera del contenido).
+        /// Lo llama solo la versión inmersiva.
+        /// </summary>
+        public void UsarAyudaDeVisor()
+        {
+            if (_panelRoot == null) return;
+
+            const float AltoAyuda = 34f;
+            var ayudaRect = RuntimeUIFactory.CreateRect(_panelRoot, "PieAyuda");
+            ayudaRect.anchorMin = new Vector2(0, 0);
+            ayudaRect.anchorMax = new Vector2(1, 0);
+            ayudaRect.pivot = new Vector2(0.5f, 0);
+            ayudaRect.anchoredPosition = new Vector2(0, 6f);
+            ayudaRect.sizeDelta = new Vector2(-Padding * 2f, AltoAyuda);
+            var ayudaTexto = RuntimeUIFactory.CreateText(ayudaRect, "Texto",
+                "Cerrar: ✕ o segundo disparo al mismo elemento  ·  Conjuntos: pulsar para " +
+                "desplegar o plegar  ·  Joystick: desplazar",
+                17, TextAnchor.MiddleCenter, new Color(0.62f, 0.65f, 0.70f, 1f));
+            RuntimeUIFactory.StretchToParent((RectTransform)ayudaTexto.transform);
+
+            // La lista de propiedades cede la franja del pie.
+            _viewport.offsetMin = new Vector2(Padding, Padding + AltoAyuda);
+        }
+
+        /// <summary>
         /// Ajusta la opacidad del fondo del panel dejando el texto intacto.
         ///
         /// Se expone como método y no como un simple color configurable porque la transparencia

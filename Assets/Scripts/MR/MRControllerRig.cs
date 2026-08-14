@@ -64,6 +64,8 @@ namespace DigitalTwin.MR
             public XRNode Nodo;
             public Transform Anclaje;
             public LineRenderer Linea;
+            public GameObject Modelo;
+            public GameObject Leyenda;
             public bool Valida;
             public bool GatilloAnterior;
             public bool GatilloPulsadoEsteFrame;
@@ -123,7 +125,108 @@ namespace DigitalTwin.MR
             linea.SetPosition(1, Vector3.forward * AlcanceRayo);
             linea.startColor = linea.endColor = ColorNeutro;
 
-            return new Mano { Nodo = nodo, Anclaje = go.transform, Linea = linea };
+            var mano = new Mano { Nodo = nodo, Anclaje = go.transform, Linea = linea };
+            mano.Modelo = CrearModeloDeMando(go.transform, nodo == XRNode.LeftHand);
+            mano.Leyenda = CrearLeyendaDeMando(go.transform);
+            return mano;
+        }
+
+        /// <summary>
+        /// Modelo del mando del fabricante, para que el rayo salga de algo y el usuario sepa
+        /// dónde están los botones — hasta ahora veía un rayo salir de la nada, y esa falta de
+        /// referencia es la causa de que hubiera funciones construidas y nunca usadas.
+        ///
+        /// LA VÍA DE CARGA, razonada. Los prefabs del paquete de VIVE
+        /// (Runtime/Prefabs/ViveFocus3ControllerAim*.prefab) no cuelgan de ninguna carpeta
+        /// Resources, así que Resources.Load no los ve. En lugar de copiar mallas, materiales y
+        /// textura (ficheros .fbx/.png gobernados por LFS), se copian SOLO LOS DOS .prefab
+        /// —texto plano— a Assets/Resources/MR/: sus referencias internas van por GUID y se
+        /// resuelven contra el paquete instalado, de modo que no se duplica ni un binario y el
+        /// commit no toca LFS. Es el mismo patrón de Resources que NavGraph.asset y el
+        /// sombreador de oclusión.
+        ///
+        /// ESTÁTICO A PROPÓSITO: el componente de animación de botones del fabricante
+        /// (ControllerModelActions) se retira tras instanciar — sondea acciones del Input
+        /// System cada fotograma y puede escribir en consola por su cuenta, y lo que se
+        /// necesita es la referencia visual, no que el gatillo se hunda. Se retira por nombre
+        /// de tipo, sin referencia de compilación al paquete: si el nombre cambiara en una
+        /// versión futura, el componente quedaría y lo peor que haría es no animar.
+        ///
+        /// Si el prefab no carga, el rayo sigue funcionando y la ausencia queda registrada: el
+        /// modelo es usabilidad, no una dependencia.
+        /// </summary>
+        private static GameObject CrearModeloDeMando(Transform anclaje, bool izquierda)
+        {
+            string ruta = izquierda ? "MR/MandoIzquierdo" : "MR/MandoDerecho";
+            var prefab = Resources.Load<GameObject>(ruta);
+            if (prefab == null)
+            {
+                Debug.LogWarning($"[DigitalTwin][AR] Modelo del mando no disponible " +
+                                 $"(Resources/{ruta}): el rayo funciona igualmente, pero sin " +
+                                 "referencia visual de los botones. Copia los prefabs del " +
+                                 "paquete VIVE a Assets/Resources/MR/.");
+                return null;
+            }
+
+            var modelo = Object.Instantiate(prefab, anclaje, false);
+            modelo.name = izquierda ? "ModeloMandoIzquierdo" : "ModeloMandoDerecho";
+            modelo.transform.localPosition = Vector3.zero;
+            modelo.transform.localRotation = Quaternion.identity;
+
+            int retirados = 0;
+            foreach (var comp in modelo.GetComponentsInChildren<MonoBehaviour>(true))
+            {
+                if (comp != null && comp.GetType().Name == "ControllerModelActions")
+                {
+                    Object.Destroy(comp);
+                    retirados++;
+                }
+            }
+
+            int renderers = modelo.GetComponentsInChildren<Renderer>(true).Length;
+            Debug.LogWarning($"[DigitalTwin][AR] Modelo del mando " +
+                             $"{(izquierda ? "izquierdo" : "derecho")} instanciado: " +
+                             $"{renderers} renderers estaticos (coste fijo, sin trabajo por " +
+                             $"fotograma; animacion del fabricante retirada: {retirados}).");
+            return modelo;
+        }
+
+        /// <summary>
+        /// Leyenda de controles junto al mando: la respuesta a que hubiera funciones sin
+        /// descubrir. Va anclada a la mano —consultable en cualquier momento levantando el
+        /// mando, sin estorbar el centro de la vista— e inclinada hacia el usuario en la pose
+        /// natural de sujeción. Existe aunque el modelo no cargue: enseña los botones incluso
+        /// sin referencia visual de dónde están.
+        /// </summary>
+        private static GameObject CrearLeyendaDeMando(Transform anclaje)
+        {
+            var canvas = DigitalTwin.UI.RuntimeUIFactory.CreateWorldCanvas(
+                "~LeyendaMando", anchoPx: 360f, altoPx: 150f, anchoMetros: 0.12f);
+            var raiz = (RectTransform)canvas.transform;
+            raiz.SetParent(anclaje, false);
+            raiz.localPosition = new Vector3(0f, 0.07f, -0.03f);
+            raiz.localRotation = Quaternion.Euler(35f, 0f, 0f);
+
+            var material = MRIndicadoresDestino.MaterialSiempreVisible();
+
+            var fondo = DigitalTwin.UI.RuntimeUIFactory.CreatePanel(raiz, "Fondo",
+                new Color(0.05f, 0.06f, 0.08f, 0.78f));
+            DigitalTwin.UI.RuntimeUIFactory.StretchToParent((RectTransform)fondo.transform);
+            if (material != null) fondo.material = material;
+
+            var texto = DigitalTwin.UI.RuntimeUIFactory.CreateText(raiz, "Texto",
+                "Gatillo · seleccionar / viajar\n" +
+                "A o X · menu de zonas\n" +
+                "Joystick · desplazar la ficha",
+                20, TextAnchor.MiddleLeft, new Color(0.92f, 0.94f, 0.97f, 1f));
+            var rtTexto = (RectTransform)texto.transform;
+            DigitalTwin.UI.RuntimeUIFactory.StretchToParent(rtTexto);
+            rtTexto.offsetMin = new Vector2(14f, 6f);
+            rtTexto.offsetMax = new Vector2(-10f, -6f);
+            if (material != null) texto.material = material;
+
+            raiz.gameObject.SetActive(false); // se enciende con la mano valida, en Update
+            return raiz.gameObject;
         }
 
         /// <summary>
@@ -150,9 +253,15 @@ namespace DigitalTwin.MR
                 mano.GatilloPulsadoEsteFrame = false;
                 mano.BotonMenuPulsadoEsteFrame = false;
 
-                // Con el mando apagado o fuera de alcance se oculta su rayo en lugar de dejarlo
-                // congelado en la última pose conocida, que resulta confuso.
+                // Con el mando apagado o fuera de alcance se ocultan su rayo, su modelo y su
+                // leyenda en lugar de dejarlos congelados en la última pose conocida. En el
+                // respaldo de ratón del Editor nunca hay mano válida, así que no se dibuja
+                // ningún mando: no hay mano que representar.
                 mano.Linea.enabled = mano.Valida;
+                if (mano.Modelo != null && mano.Modelo.activeSelf != mano.Valida)
+                    mano.Modelo.SetActive(mano.Valida);
+                if (mano.Leyenda != null && mano.Leyenda.activeSelf != mano.Valida)
+                    mano.Leyenda.SetActive(mano.Valida);
                 if (!mano.Valida) { mano.GatilloAnterior = false; mano.BotonMenuAnterior = false; continue; }
 
                 if (dispositivo.TryGetFeatureValue(CommonUsages.devicePosition, out Vector3 pos))

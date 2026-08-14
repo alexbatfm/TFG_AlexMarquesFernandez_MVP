@@ -79,6 +79,33 @@ namespace DigitalTwin.IoT
         /// mantenimiento sobra.</summary>
         private const float EsperaMaximaSegundos = 60f;
 
+        /// <summary>
+        /// TOPE DE FILAS POR TABLA Y CICLO del sondeo incremental (15-08). El incremental pedía
+        /// `recorded_at > @since` SIN LIMIT: con la marca de agua atrasada —fallos de conexión,
+        /// retroceso de hasta 60 s, o un arranque tardío frente a un simulador que lleva horas
+        /// escribiendo— un único ciclo bueno se traía TODO el atraso de las cuatro tablas de
+        /// golpe y lo procesaba fila a fila. Es un mecanismo real para el «se puso raro» del
+        /// 14-08 (y encaja con que reiniciar la base de datos lo arreglara: histórico
+        /// acumulado), aunque sin registro de aquella sesión la causa no se puede afirmar.
+        ///
+        /// LA POLÍTICA CON EL ATRASO, escrita: si una tabla devuelve el tope completo, hay más
+        /// atraso esperando, y para telemetría de mantenimiento el histórico intermedio no
+        /// vale nada — lo que importa es el estado ACTUAL de cada sensor. Se descarta el
+        /// atraso saltando al valor más reciente: la marca de agua de esa tabla se borra y el
+        /// ciclo siguiente vuelve al sondeo inicial (último valor por sensor, acotado por
+        /// construcción). Nunca en silencio: el salto queda registrado con la tabla y la marca.
+        ///
+        /// El valor: 32 sensores y sondeo cada 5 s producen como mucho unas decenas de filas
+        /// por tabla y ciclo en funcionamiento normal; 200 deja un orden de magnitud de
+        /// holgura antes de declarar atraso.
+        /// </summary>
+        private const int LimiteFilasPorCiclo = 200;
+
+        /// <summary>Cada cuántos ciclos se vuelca el resumen del sondeo (con 5 s por ciclo,
+        /// una línea por minuto): filas por tabla, duración media y marcas de agua. Es la
+        /// instrumentación que faltó el 14-08 para que la anomalía fuera legible.</summary>
+        private const int CiclosEntreResumenes = 12;
+
         public SensorDataStore Store { get; } = new SensorDataStore();
         public SensorCatalog Catalog { get; } = new SensorCatalog();
 
@@ -97,6 +124,14 @@ namespace DigitalTwin.IoT
         private readonly Dictionary<string, DateTime> _watermarks = new Dictionary<string, DateTime>();
         private bool _catalogLoaded;
         private bool _running;
+
+        // Instrumentación del sondeo: acumuladores del resumen periódico y estado del último
+        // ciclo. Todo se vuelca por LogWarning; ver LimiteFilasPorCiclo y CiclosEntreResumenes.
+        private readonly Dictionary<string, int> _filasDelCiclo = new Dictionary<string, int>();
+        private readonly Dictionary<string, long> _filasAcumuladas = new Dictionary<string, long>();
+        private int _ciclosDesdeResumen;
+        private double _msAcumulados;
+        private readonly System.Diagnostics.Stopwatch _cronoCiclo = new System.Diagnostics.Stopwatch();
 
         /// <summary>
         /// Anfitrión que se usa realmente, decidido en tiempo de ejecución.
@@ -126,7 +161,10 @@ namespace DigitalTwin.IoT
         private void Start()
         {
             _running = true;
-            Debug.Log($"[DigitalTwin][IoT] Iniciando sondeo contra {HostEfectivo}:{Port}/{Database} cada {PollIntervalSeconds}s...");
+            // Warning y no Log: cuando el sondeo del 14-08 «se puso raro», esta linea y la del
+            // catalogo eran las que habrian dicho que estaba haciendo, y una compilacion que no
+            // es de desarrollo las filtraba del logcat.
+            Debug.LogWarning($"[DigitalTwin][IoT] Iniciando sondeo contra {HostEfectivo}:{Port}/{Database} cada {PollIntervalSeconds}s (tope {LimiteFilasPorCiclo} filas/tabla/ciclo).");
             _ = PollLoopAsync();
         }
 
@@ -196,11 +234,16 @@ namespace DigitalTwin.IoT
                 {
                     await Catalog.LoadAsync(connection);
                     _catalogLoaded = true;
-                    Debug.Log($"[DigitalTwin][IoT] Catálogo de sensores cargado: {Catalog.BySensorId.Count} sensores en periscoopedb.");
+                    Debug.LogWarning($"[DigitalTwin][IoT] Catálogo de sensores cargado: {Catalog.BySensorId.Count} sensores en periscoopedb.");
                 }
 
+                _filasDelCiclo.Clear();
+                _cronoCiclo.Restart();
                 foreach (var table in ReadingTables)
                     await PollTableAsync(connection, table.Table, table.ValueColumn, table.Kind);
+                _cronoCiclo.Stop();
+
+                RegistrarEstadisticasDelCiclo();
 
                 if (!IsConnected)
                     Debug.LogWarning($"[DigitalTwin][IoT] Conexion con MySQL establecida " +
@@ -230,24 +273,48 @@ namespace DigitalTwin.IoT
         {
             bool firstPoll = !_watermarks.ContainsKey(table);
 
+            // El incremental lleva TOPE (ver LimiteFilasPorCiclo): se pide una fila más que el
+            // tope solo para poder distinguir «justo el tope» de «hay atraso pendiente».
             string sql = firstPoll
                 ? $"SELECT t.sensor_id, t.{valueColumn}, t.recorded_at FROM {table} t " +
                   $"INNER JOIN (SELECT sensor_id, MAX(recorded_at) AS max_rec FROM {table} GROUP BY sensor_id) latest " +
                   "ON t.sensor_id = latest.sensor_id AND t.recorded_at = latest.max_rec;"
-                : $"SELECT sensor_id, {valueColumn}, recorded_at FROM {table} WHERE recorded_at > @since ORDER BY recorded_at ASC;";
+                : $"SELECT sensor_id, {valueColumn}, recorded_at FROM {table} WHERE recorded_at > @since " +
+                  $"ORDER BY recorded_at ASC LIMIT {LimiteFilasPorCiclo + 1};";
 
             using var cmd = new MySqlCommand(sql, connection);
             if (!firstPoll) cmd.Parameters.AddWithValue("@since", _watermarks[table]);
 
             DateTime maxSeen = firstPoll ? DateTime.MinValue : _watermarks[table];
+            int filas = 0;
             using (var reader = await cmd.ExecuteReaderAsync())
             {
                 while (await reader.ReadAsync())
                 {
+                    filas++;
+                    if (!firstPoll && filas > LimiteFilasPorCiclo) break; // hay atraso: se corta
                     DateTime recordedAt = reader.GetDateTime(2);
                     ApplyRow(reader, kind, recordedAt);
                     if (recordedAt > maxSeen) maxSeen = recordedAt;
                 }
+            }
+            _filasDelCiclo[table] = filas;
+            _filasAcumuladas[table] = (_filasAcumuladas.TryGetValue(table, out long acc) ? acc : 0) +
+                                      Mathf.Min(filas, LimiteFilasPorCiclo);
+
+            if (!firstPoll && filas > LimiteFilasPorCiclo)
+            {
+                // ATRASO DECLARADO: la política escrita en LimiteFilasPorCiclo — el histórico
+                // intermedio se descarta y se salta al valor más reciente por sensor. Borrar la
+                // marca hace que el próximo ciclo use el sondeo inicial, acotado.
+                Debug.LogWarning($"[DigitalTwin][IoT] Atraso en '{table}': mas de " +
+                                 $"{LimiteFilasPorCiclo} filas pendientes desde " +
+                                 $"{_watermarks[table]:yyyy-MM-dd HH:mm:ss}. Se DESCARTA el " +
+                                 "atraso y el proximo ciclo salta al ultimo valor por sensor " +
+                                 "(para telemetria de mantenimiento importa el estado actual, " +
+                                 "no el historico intermedio).");
+                _watermarks.Remove(table);
+                return;
             }
 
             // Si la tabla estaba vacía no hay marca de agua que heredar y hay que inventarla.
@@ -256,7 +323,69 @@ namespace DigitalTwin.IoT
             // hora local. Mezclar ambas escalas desplazaría la marca de agua tantas horas como
             // diste el equipo de UTC (en España, 1 o 2), con lo que las primeras lecturas
             // nuevas podrían quedar por debajo del corte y no llegar nunca al panel.
-            _watermarks[table] = maxSeen == DateTime.MinValue ? DateTime.Now : maxSeen;
+            //
+            // ESE RAZONAMIENTO DA POR HECHO QUE LOS DOS RELOJES COINCIDEN, y visor y equipo
+            // son máquinas distintas: si el visor va adelantado, la marca queda en el futuro y
+            // no llega nada nunca; si va atrasado, llega una avalancha. Por eso el sellado
+            // deja registro con la hora local del dispositivo: el desfase se lee comparándola
+            // con el recorded_at que escriba el simulador.
+            if (maxSeen == DateTime.MinValue)
+            {
+                DateTime sello = DateTime.Now;
+                _watermarks[table] = sello;
+                Debug.LogWarning($"[DigitalTwin][IoT] Tabla '{table}' vacia: marca de agua " +
+                                 $"sellada con la hora local del dispositivo " +
+                                 $"{sello:yyyy-MM-dd HH:mm:ss}. Si el reloj del equipo de la " +
+                                 "base de datos difiere, este sello queda en su futuro (no " +
+                                 "llegaria nada) o en su pasado (llegaria una avalancha, que " +
+                                 "el tope por ciclo acota).");
+            }
+            else
+            {
+                _watermarks[table] = maxSeen;
+            }
+        }
+
+        /// <summary>
+        /// La instrumentación que faltó el 14-08: un resumen por minuto con filas por tabla,
+        /// duración media y marcas de agua, y una línea inmediata si un ciclo se sale de lo
+        /// normal (muchas filas o demasiado tiempo). Con esto, la próxima anomalía del sondeo
+        /// se diagnostica desde el registro en lugar de quedarse en «se puso raro».
+        /// </summary>
+        private void RegistrarEstadisticasDelCiclo()
+        {
+            double ms = _cronoCiclo.Elapsed.TotalMilliseconds;
+            _msAcumulados += ms;
+            _ciclosDesdeResumen++;
+
+            int filasCiclo = 0;
+            foreach (var par in _filasDelCiclo) filasCiclo += Mathf.Min(par.Value, LimiteFilasPorCiclo);
+
+            // Ciclo anómalo: se cuenta al momento, no se espera al resumen.
+            if (ms > 1000 || filasCiclo > LimiteFilasPorCiclo)
+                Debug.LogWarning($"[DigitalTwin][IoT] Ciclo fuera de lo normal: {filasCiclo} " +
+                                 $"filas en {ms:0} ms.");
+
+            if (_ciclosDesdeResumen < CiclosEntreResumenes) return;
+
+            var detalle = new System.Text.StringBuilder();
+            foreach (var table in ReadingTables)
+            {
+                long total = _filasAcumuladas.TryGetValue(table.Table, out long acc) ? acc : 0;
+                string marca = _watermarks.TryGetValue(table.Table, out DateTime w)
+                    ? w.ToString("HH:mm:ss") : "(sin marca)";
+                if (detalle.Length > 0) detalle.Append("; ");
+                detalle.Append(table.Table.Replace("_sensor_readings", ""))
+                       .Append('=').Append(total).Append(" filas, marca ").Append(marca);
+            }
+
+            Debug.LogWarning($"[DigitalTwin][IoT] Resumen de sondeo: {_ciclosDesdeResumen} " +
+                             $"ciclos, {_msAcumulados / _ciclosDesdeResumen:0} ms de media, " +
+                             $"hora local del dispositivo {DateTime.Now:HH:mm:ss}. {detalle}.");
+
+            _ciclosDesdeResumen = 0;
+            _msAcumulados = 0;
+            _filasAcumuladas.Clear();
         }
 
         private void ApplyRow(MySqlDataReader reader, SensorKind kind, DateTime recordedAt)

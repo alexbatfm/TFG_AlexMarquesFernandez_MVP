@@ -1,8 +1,10 @@
 using System.Collections;
+using System.Collections.Generic;
 using DigitalTwin.Core;
 using DigitalTwin.Metadata;
 using UnityEngine;
 using UnityEngine.SceneManagement;
+using UnityEngine.XR;
 
 namespace DigitalTwin.MR
 {
@@ -134,6 +136,12 @@ namespace DigitalTwin.MR
                 return;
             }
 
+            // Seguimiento a nivel de suelo, verificado y nunca supuesto: la escena lo pide
+            // (XROrigin en modo Floor con desplazamiento cero desde el 15-08), pero el modo
+            // efectivo lo decide el runtime y aquí se comprueba, se registra y, si no se
+            // consigue, se compensa con una degradación declarada.
+            AsegurarSeguimientoANivelDeSuelo(origenXR);
+
             var rigGo = new GameObject("~MandosAR");
             rigGo.transform.SetParent(desplazamientoCamara, false);
             var rig = rigGo.AddComponent<MRControllerRig>();
@@ -165,6 +173,64 @@ namespace DigitalTwin.MR
             secuenciador.Iniciar(index, rig, desplazamientoCamara, origenXR);
 
             _initialized = true;
+        }
+
+        /// <summary>Altura de ojos con la que se degrada cuando no hay seguimiento a nivel de
+        /// suelo (y con la que se prueba en el Editor): la altura de ojos de pie mediana de la
+        /// población adulta, ~1,58 m (ANSUR II, tablas resumen del Ergonomics Center NCSU).</summary>
+        private const float AlturaVistaSinSuelo = 1.58f;
+
+        /// <summary>
+        /// Fija y VERIFICA el modo de origen de seguimiento a nivel de suelo, con el resultado
+        /// en el registro. Con origen de suelo, la altura de la cámara es la estatura real del
+        /// usuario sobre el suelo de juego y el programa no la toca nunca (los viajes son
+        /// horizontales). Dos degradaciones declaradas: en el Editor sin subsistema XR, el
+        /// origen se eleva a una altura de ojos mediana para que el respaldo de ratón vea como
+        /// una persona de pie; y si el dispositivo no admitiera el modo de suelo, se aplica la
+        /// misma elevación —la estatura real no es conocible en ese modo— dejándolo dicho.
+        /// </summary>
+        private static void AsegurarSeguimientoANivelDeSuelo(Transform origenXR)
+        {
+            var subsistemas = new List<XRInputSubsystem>();
+            SubsystemManager.GetSubsystems(subsistemas);
+
+            if (subsistemas.Count == 0)
+            {
+#if UNITY_EDITOR
+                origenXR.position += Vector3.up * AlturaVistaSinSuelo;
+                Debug.LogWarning("[DigitalTwin][AR] Sin subsistema XR (modo Play del Editor): " +
+                                 $"origen elevado {AlturaVistaSinSuelo:0.00} m para que el " +
+                                 "respaldo de raton vea a altura de ojos de una persona de pie.");
+#else
+                Debug.LogWarning("[DigitalTwin][AR] Sin subsistema XR de entrada: no se puede " +
+                                 "fijar el origen de seguimiento. La altura de la vista queda " +
+                                 "en manos de la escena.");
+#endif
+                return;
+            }
+
+            foreach (var subsistema in subsistemas)
+            {
+                var soportados = subsistema.GetSupportedTrackingOriginModes();
+                bool admiteSuelo = (soportados & TrackingOriginModeFlags.Floor) != 0;
+                bool aplicado = admiteSuelo &&
+                                subsistema.TrySetTrackingOriginMode(TrackingOriginModeFlags.Floor);
+                var resuelto = subsistema.GetTrackingOriginMode();
+
+                Debug.LogWarning($"[DigitalTwin][AR] Origen de seguimiento: soportados " +
+                                 $"[{soportados}], solicitado Floor, aplicado {aplicado}, " +
+                                 $"RESUELTO [{resuelto}]. Con Floor, la altura de la vista es " +
+                                 "la estatura real del usuario y el programa no la escribe.");
+
+                if (resuelto != TrackingOriginModeFlags.Floor)
+                {
+                    origenXR.position += Vector3.up * AlturaVistaSinSuelo;
+                    Debug.LogWarning("[DigitalTwin][AR] El dispositivo NO ha quedado en origen " +
+                                     $"de suelo: se eleva el origen {AlturaVistaSinSuelo:0.00} m " +
+                                     "como altura de ojos mediana (degradacion declarada; la " +
+                                     "estatura real no es conocible en este modo).");
+                }
+            }
         }
 
         /// <summary>
@@ -267,6 +333,9 @@ namespace DigitalTwin.MR
             // a 1.4). Los cuerpos NO se suben más en esta tanda: el paso a 1 m de ancho ya los
             // agranda un 43 % angular respecto al 0,70 probado, y primero hay que ver si basta.
             panel.UsarTipografiaDeVisor();
+            // Los gestos del panel, dichos en el propio panel (segundo disparo cierra,
+            // conjuntos desplegables, joystick desplaza): eran funciones implementadas y mudas.
+            panel.UsarAyudaDeVisor();
             // Fondo translúcido: da sensación de espacio sin restar legibilidad al texto, que
             // sigue a opacidad completa (ver SetOpacidadFondo). Ante el usuario y a 1,1 m ocupa
             // bastante campo de visión, y en modo anclado lo que hay detrás es el edificio real.

@@ -34,18 +34,19 @@ namespace DigitalTwin.MR
     /// volúmenes actuales), no contra las posiciones guardadas en el asset del grafo: el asset
     /// se generó con el modelo en su pose de autor y quedaría obsoleto si el modelo se moviera.
     ///
-    /// SOBRE LAS ALTURAS. Cada consumidor de posiciones tiene su regla explícita y este fichero
-    /// es el único que las decide. VIAJE: a una esfera se termina a su altura de autor (1,55 m,
-    /// altura de la vista); a una puerta se conserva la altura actual de la vista, porque el
-    /// centro de la hoja está a ~1,05 m y aterrizar ahí hundiría la vista a la altura del pecho
-    /// (regla del visor, declarada; el escritorio aterriza en el centro de la hoja, su
-    /// comportamiento verificado). CARTEL: desde el 14-08 los carteles se dibujan POR ENCIMA de
-    /// la geometría (ver MRIndicadoresDestino), así que su altura ya no compensa oclusiones —
-    /// las dos iteraciones anteriores (hundido en la hoja, pegado al techo) existían solo por
-    /// eso — y vuelve al criterio simple: LA ALTURA QUE CORRESPONDE AL NODO, 0,35 m sobre su
-    /// posición viva, sea esfera (~1,90 m) o puerta (~1,40 m, sobre el centro de la hoja, que
-    /// es donde está el nodo). El refresco registra la altura de cada cartel para que cualquier
-    /// discrepancia futura sea legible desde el registro.
+    /// SOBRE LAS ALTURAS (unificación del 15-08). En el visor, la altura de los OJOS la impone
+    /// el usuario a través del seguimiento a nivel de suelo: no es un parámetro del programa, y
+    /// por eso el VIAJE es puramente HORIZONTAL — el origen de realidad extendida se desplaza
+    /// en planta hasta el nodo y la vista conserva la estatura real del usuario. El parámetro
+    /// de diseño es la altura de los NODOS, unificada en 1,40 m sobre su suelo para todos
+    /// (<see cref="PosicionDeNodos"/>, con la investigación antropométrica en su cabecera), de
+    /// modo que el marcador de un destino queda en o bajo la línea de visión de prácticamente
+    /// cualquier adulto de pie. El cartel se dibuja EN el nodo (MRIndicadoresDestino alinea su
+    /// lienzo para que el anillo caiga exactamente a esa altura) y por encima de la geometría,
+    /// así que no queda ninguna regla de compensación: ni carteles elevados sobre el nodo, ni
+    /// alturas distintas por tipo de nodo, ni viajes que preserven o impongan alturas de
+    /// vista. Las tres reglas especiales que hacían eso se eliminaron al unificar la causa. El
+    /// refresco registra la altura de cada cartel, y cada llegada la altura real de la vista.
     /// </summary>
     public class MRNodeNavigator : MonoBehaviour
     {
@@ -59,16 +60,6 @@ namespace DigitalTwin.MR
         /// velocidad constante desorienta más que un corte limpio. Hasta el menú de zonas era
         /// teórico —los vecinos del grafo quedan siempre cerca—; con él es el caso normal.</summary>
         private const float DistanciaSaltoInstantaneo = 12f;
-
-        /// <summary>Altura de la vista si el destino no tiene una posición utilizable.</summary>
-        private const float AlturaVistaPorDefecto = 1.6f;
-
-        /// <summary>Altura del cartel sobre la posición viva del nodo, para CUALQUIER tipo de
-        /// nodo. Antes las puertas tenían una constante propia (dintel + margen) para esquivar
-        /// la oclusión de su propia hoja; con los carteles dibujándose por encima de la
-        /// geometría, esa compensación desaparece y queda el criterio simple: la altura que
-        /// corresponde al nodo.</summary>
-        private const float AlturaCartelSobreNodo = 0.35f;
 
         /// <summary>Cuántos destinos garantiza la salida de emergencia. Es el mismo mínimo que
         /// el criterio de proximidad de escritorio (MinHotspotsAlwaysShown): quedarse sin
@@ -227,10 +218,15 @@ namespace DigitalTwin.MR
                 return;
             }
 
-            _origenXR.position += PosicionDeViaje(mejor) - _camara.transform.position;
+            // Desplazamiento HORIZONTAL: la altura de la vista es del usuario (seguimiento a
+            // nivel de suelo) y ninguna colocación la escribe.
+            Vector3 delta = PosicionDeNodo(mejor) - _camara.transform.position;
+            delta.y = 0f;
+            _origenXR.position += delta;
             _indiceNodoActual = mejor;
             Debug.LogWarning($"[DigitalTwin][AR] Nodo inicial: '{Etiqueta(mejor)}' " +
-                             $"(estaba a {mejorDist:0.0} m).");
+                             $"(estaba a {mejorDist:0.0} m; vista a " +
+                             $"{_camara.transform.position.y:0.00} m del suelo).");
             PuertaTransparente.AlLlegarANodo(MetaDe(mejor));
             RefrescarIndicadores();
         }
@@ -295,7 +291,7 @@ namespace DigitalTwin.MR
                 return false;
             }
 
-            StartCoroutine(Desplazamiento(PosicionDeViaje(indiceDestino), indiceDestino,
+            StartCoroutine(Desplazamiento(PosicionDeNodo(indiceDestino), indiceDestino,
                                           Etiqueta(indiceDestino)));
             return true;
         }
@@ -351,7 +347,7 @@ namespace DigitalTwin.MR
             Debug.LogWarning($"[DigitalTwin][AR] Menu de zonas: viaje de acceso directo a " +
                              $"'{sala}' ('{Etiqueta(indice)}'), fuera del grafo a proposito " +
                              "(mismo contrato que el menu de escritorio).");
-            StartCoroutine(Desplazamiento(PosicionDeViaje(indice), indice, Etiqueta(indice)));
+            StartCoroutine(Desplazamiento(PosicionDeNodo(indice), indice, Etiqueta(indice)));
             return true;
         }
 
@@ -364,9 +360,8 @@ namespace DigitalTwin.MR
         {
             if (EnTransito || destino == null) return false;
 
-            Vector3 pos = destino.transform.position;
-            float altura = pos.y > 0.01f ? pos.y : AlturaVistaPorDefecto;
-            StartCoroutine(Desplazamiento(new Vector3(pos.x, altura, pos.z), nodoFinal: -1,
+            // Solo cuenta la planta del destino: la altura de la vista es del usuario.
+            StartCoroutine(Desplazamiento(destino.transform.position, nodoFinal: -1,
                                           etiquetaFinal: destino.ifcName));
             return true;
         }
@@ -388,7 +383,7 @@ namespace DigitalTwin.MR
                 destinos.Add(new MRIndicadoresDestino.Destino
                 {
                     IndiceNodo = v,
-                    Posicion = PosicionDeCartel(v),
+                    Posicion = PosicionDeNodo(v),
                     Etiqueta = Etiqueta(v)
                 });
             }
@@ -406,7 +401,7 @@ namespace DigitalTwin.MR
                     destinos.Add(new MRIndicadoresDestino.Destino
                     {
                         IndiceNodo = s,
-                        Posicion = PosicionDeCartel(s),
+                        Posicion = PosicionDeNodo(s),
                         Etiqueta = Etiqueta(s)
                     });
                 }
@@ -467,13 +462,18 @@ namespace DigitalTwin.MR
         /// solo en el tiempo. Mueve el origen de realidad extendida por la diferencia de
         /// posiciones de cámara, de modo que la cabeza del usuario termina exactamente en el
         /// destino aunque se mueva durante la transición.
+        ///
+        /// EL DESPLAZAMIENTO ES HORIZONTAL: del destino solo cuenta su planta (x, z) y la
+        /// vista conserva la estatura real del usuario, que con el seguimiento a nivel de
+        /// suelo es quien la impone. Ninguna llegada escribe la altura de la vista.
         /// </summary>
-        private IEnumerator Desplazamiento(Vector3 hasta, int nodoFinal, string etiquetaFinal)
+        private IEnumerator Desplazamiento(Vector3 destino, int nodoFinal, string etiquetaFinal)
         {
             EnTransito = true;
             if (_indicadores != null) _indicadores.OcultarTodos();
 
             Vector3 desde = _camara.transform.position;
+            Vector3 hasta = new Vector3(destino.x, desde.y, destino.z);
             float distancia = Vector3.Distance(desde, hasta);
 
             // Corto: instantáneo porque animar no aporta. Largo: instantáneo porque animar
@@ -513,7 +513,11 @@ namespace DigitalTwin.MR
 
             if (nodoFinal >= 0) _indiceNodoActual = nodoFinal;
             EnTransito = false;
-            Debug.LogWarning($"[DigitalTwin][AR] Llegada a '{etiquetaFinal}'.");
+            // La altura de la vista va en cada llegada: es el dato que permite comprobar en una
+            // sola prueba que el seguimiento a nivel de suelo funciona (debe ser la estatura
+            // real del usuario, estable entre llegadas, no la altura de ningún nodo).
+            Debug.LogWarning($"[DigitalTwin][AR] Llegada a '{etiquetaFinal}' (vista a " +
+                             $"{_camara.transform.position.y:0.00} m del suelo).");
 
             // La regla de la puerta: si el nodo alcanzado es una puerta, su hoja deja de
             // dibujarse mientras se ocupe; si no lo es, cualquier hoja oculta se restituye.
@@ -530,56 +534,18 @@ namespace DigitalTwin.MR
         }
 
         /// <summary>
-        /// Posición viva NEUTRA del nodo (distancias, referencia): el origen del objeto para
-        /// los puntos "Esfera..." (ya están a la altura de la vista) y el centro del volumen
-        /// para las puertas (su origen cae en una esquina del marco). Misma regla que el
-        /// gestor de escritorio.
+        /// Posición viva del nodo: la regla ÚNICA de <see cref="PosicionDeNodos"/> (planta del
+        /// elemento + 1,40 m sobre su suelo), la misma que usan el generador del grafo y el
+        /// gestor de escritorio. Sirve a la vez de destino de viaje (solo cuenta su planta),
+        /// de anclaje del cartel (el anillo cae exactamente a esta altura) y de referencia de
+        /// distancias. Un nodo sin elemento en escena cae a la posición del asset, que tras
+        /// regenerar el grafo lleva la misma altura.
         /// </summary>
         private Vector3 PosicionDeNodo(int indiceNodo)
         {
             var meta = MetaDe(indiceNodo);
             if (meta == null) return _grafo.Nodos[indiceNodo].Posicion;
-
-            if (meta.ifcType == "IfcDoor")
-            {
-                var r = meta.GetComponentInChildren<Renderer>();
-                if (r != null) return r.bounds.center;
-            }
-            return meta.transform.position;
-        }
-
-        /// <summary>
-        /// Punto en el que termina el VIAJE a un nodo. Para una esfera coincide con el nodo
-        /// (altura de autor, 1,55 m). Para una puerta se conserva la ALTURA ACTUAL de la
-        /// vista: el centro de la hoja queda a ~1,05 m y aterrizar ahí hunde la vista a la
-        /// altura del pecho. Regla propia del visor, declarada en la cabecera de la clase; el
-        /// escritorio conserva la suya (aterriza en el centro de la hoja).
-        /// </summary>
-        private Vector3 PosicionDeViaje(int indiceNodo)
-        {
-            Vector3 pos = PosicionDeNodo(indiceNodo);
-            var meta = MetaDe(indiceNodo);
-            if (meta != null && meta.ifcType == "IfcDoor")
-            {
-                float alturaVista = _camara != null && _camara.transform.position.y > 0.5f
-                    ? _camara.transform.position.y
-                    : AlturaVistaPorDefecto;
-                return new Vector3(pos.x, alturaVista, pos.z);
-            }
-            return pos;
-        }
-
-        /// <summary>
-        /// Punto de anclaje del CARTEL de un nodo (posición FINAL: quien presenta no añade
-        /// ningún desplazamiento más). Regla única para todos los nodos: 0,35 m sobre la
-        /// posición viva. Las dos reglas especiales que hubo para las puertas —colgar del
-        /// dintel para que la hoja no ocultara el cartel; antes, el centro de la hoja lo
-        /// hundía en la madera— existían solo para esquivar la prueba de profundidad, y los
-        /// carteles se dibujan ahora por encima de la geometría (MRIndicadoresDestino).
-        /// </summary>
-        private Vector3 PosicionDeCartel(int indiceNodo)
-        {
-            return PosicionDeNodo(indiceNodo) + Vector3.up * AlturaCartelSobreNodo;
+            return PosicionDeNodos.De(meta);
         }
 
         private string Etiqueta(int indiceNodo)

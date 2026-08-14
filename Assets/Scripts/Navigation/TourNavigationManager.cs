@@ -33,13 +33,11 @@ namespace DigitalTwin.Navigation
             public string Sala;
 
             /// <summary>
-            /// Posición a la que viaja la cámara, si difiere del origen del objeto.
-            ///
-            /// Los puntos "Esfera..." están colocados directamente a la altura de la vista, así
-            /// que para ellos basta el origen. Los nodos de puerta, en cambio, toman su posición
-            /// del centro del volumen de la hoja: el origen de una puerta procedente de Revit
-            /// suele caer en una esquina del marco, y usarlo dejaría la cámara incrustada en el
-            /// tabique.
+            /// Posición del nodo según la regla ÚNICA de <see cref="PosicionDeNodos"/>: la
+            /// planta del elemento y la altura unificada (1,40 m sobre su suelo) para TODOS
+            /// los puntos, esferas y puertas. En escritorio es además la posición de la
+            /// cámara al llegar. El origen del objeto queda solo como último recurso del
+            /// accesor <see cref="Pos"/> si esta posición no se hubiera calculado.
             /// </summary>
             public Vector3? PosicionFija;
 
@@ -158,7 +156,12 @@ namespace DigitalTwin.Navigation
                     Meta = meta,
                     Transform = meta.transform,
                     DisplayName = BuildDisplayName(meta),
-                    Sala = meta.GetValue("Otros", "LOC_Localizacion4")
+                    Sala = meta.GetValue("Otros", "LOC_Localizacion4"),
+                    // La regla ÚNICA de posición de nodos (planta + 1,40 m sobre el suelo,
+                    // ver PosicionDeNodos): aquí es además la altura de la CÁMARA de
+                    // escritorio, que debe coincidir con la de los nodos para que ambas
+                    // versiones muestren la misma escena y las capturas sean comparables.
+                    PosicionFija = PosicionDeNodos.De(meta)
                 });
             }
 
@@ -282,14 +285,18 @@ namespace DigitalTwin.Navigation
                 if (_puntosPorGlobalId.ContainsKey(nodo.GlobalId)) continue;
                 if (!porGlobalId.TryGetValue(nodo.GlobalId, out var meta)) continue;
 
-                var renderer = meta.GetComponentInChildren<Renderer>();
                 var punto = new NavPointData
                 {
                     Meta = meta,
                     Transform = meta.transform,
                     DisplayName = BuildDisplayName(meta),
                     Sala = meta.GetValue("Otros", "LOC_Localizacion4"),
-                    PosicionFija = renderer != null ? renderer.bounds.center : (Vector3?)null
+                    // Misma regla única que las esferas: planta del elemento (para una puerta,
+                    // el centro de su volumen, no el origen que cae en la esquina del marco) y
+                    // la altura unificada de nodos. Hasta el 15-08 aquí se usaba el centro de
+                    // la hoja (~1,05 m), que dejaba la cámara de escritorio a la altura del
+                    // pecho al llegar a una puerta.
+                    PosicionFija = PosicionDeNodos.De(meta)
                 };
 
                 _points.Add(punto);

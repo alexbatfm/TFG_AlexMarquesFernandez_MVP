@@ -185,14 +185,20 @@ namespace DigitalTwin.EditorTools
         }
 
         /// <summary>
-        /// Posición del nodo. Para las puertas se usa el centro de su volumen y no el origen del
-        /// objeto, que en la geometría procedente de Revit suele quedar en una esquina del marco
-        /// y dejaría el nodo incrustado en el tabique.
+        /// Posición del nodo: la regla ÚNICA de <see cref="PosicionDeNodos"/> (planta del
+        /// elemento + altura unificada de 1,40 m sobre su suelo), compartida con los dos
+        /// consumidores en ejecución. Hasta el 15-08 las puertas usaban el centro de su hoja
+        /// (~1,05 m) y las esferas su altura de autor (1,55 m); dos alturas distintas que
+        /// obligaban a reglas especiales aguas abajo. La planta (x, z) de una puerta sigue
+        /// siendo el centro de su volumen y no el origen del objeto, que en la geometría
+        /// procedente de Revit cae en una esquina del marco y dejaría el nodo incrustado en el
+        /// tabique. Tras cambiar esta regla hay que REGENERAR el grafo para que el asset
+        /// refleje las alturas nuevas (los consumidores en ejecución no dependen de las
+        /// alturas del asset, pero el trazado de coste de esta herramienta sí).
         /// </summary>
         private static Vector3 PosicionDe(IfcMetadata meta)
         {
-            var r = meta.GetComponentInChildren<Renderer>();
-            return r != null ? r.bounds.center : meta.transform.position;
+            return PosicionDeNodos.De(meta);
         }
 
         /// <summary>
@@ -208,7 +214,8 @@ namespace DigitalTwin.EditorTools
         /// gratis, porque el modelo IFC ya sabe dónde están: son entidades <c>IfcDoor</c> con su
         /// posición y su identificador global. Es además el punto por el que un operario pasaría
         /// realmente, de modo que el recorrido resultante se parece más a caminar por el edificio
-        /// que a atravesarlo.
+        /// que a atravesarlo. Del elemento solo se toma su PLANTA: la altura del nodo es la
+        /// unificada de <see cref="PosicionDeNodos"/>, igual que la de los puntos de vista.
         ///
         /// Un umbral es un sitio perfectamente razonable desde el que mirar en un recorrido
         /// virtual: se ve la sala que se deja y la que se entra.
@@ -309,15 +316,14 @@ namespace DigitalTwin.EditorTools
         // puertas en lugar de colarse bajo el marco", razonamiento que era correcto en abstracto
         // pero partia de una premisa falsa: que los nodos estuvieran a ras de suelo.
         //
-        // No lo estan. Los puntos "Esfera..." del modelo ya vienen a 1,55 m, la altura de la
-        // vista, y los nodos de puerta se situan en el centro del volumen de la hoja, en torno a
-        // 1,05 m. Sumarles 1,2 m elevaba el trazado a 2,75 m y 2,29 m respectivamente; como una
-        // puerta mide unos 2,1 m, el rayo pasaba POR ENCIMA DEL DINTEL y atravesaba el macizo del
-        // muro. El resultado era que ninguna puerta llegaba a contabilizarse como paso y todas
-        // las aristas entre estancias contiguas aparecian como atravesando fabrica.
+        // No lo estan: desde el 15-08 todos los nodos van a la altura unificada de 1,40 m sobre
+        // su suelo (PosicionDeNodos; antes, esferas a 1,55 y puertas a ~1,05). Sumarles 1,2 m
+        // elevaria el trazado a 2,60 m; como una puerta mide unos 2,1 m, el rayo pasaria POR
+        // ENCIMA DEL DINTEL y atravesaria el macizo del muro, con lo que ninguna puerta
+        // contabilizaria como paso y todas las aristas entre estancias contiguas aparecerian
+        // como atravesando fabrica.
         //
-        // Entre 1,05 y 1,55 m el rayo discurre por el centro del hueco de paso, que es justo
-        // donde debe ir.
+        // A 1,40 m el rayo discurre por el centro del hueco de paso, que es justo donde debe ir.
 
         /// <summary>
         /// Los volúmenes de colisión los añade <c>ColliderBootstrapper</c> al arrancar el juego,

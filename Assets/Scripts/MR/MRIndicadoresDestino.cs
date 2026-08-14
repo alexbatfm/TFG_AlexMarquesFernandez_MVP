@@ -46,6 +46,17 @@ namespace DigitalTwin.MR
         /// <summary>Ancho del cartel en metros. Legible a 10-15 m sin invadir la escena.</summary>
         public float AnchoMetros = 0.45f;
 
+        /// <summary>
+        /// Desplazamiento del CENTRO del anillo respecto al centro del lienzo, en unidades de
+        /// maquetación (el anillo cuelga de la parte alta: 8 px de margen + 42 de radio desde
+        /// el borde superior de un lienzo de 185 → 92,5 − 50 = 42,5 px por encima del centro).
+        /// Se usa para colocar el lienzo de modo que EL ANILLO caiga exactamente en la
+        /// posición del nodo: desde la unificación de alturas (15-08), «la altura del nodo» es
+        /// literalmente la altura a la que el usuario ve el marcador, y la etiqueta queda
+        /// debajo. Si cambia la maquetación del cartel, recalcular.
+        /// </summary>
+        private const float DesfaseAnilloPx = 42.5f;
+
         // Mismos colores que los hotspots de escritorio (TourNavigationManager.CreateHotspotSlot).
         private static readonly Color ColorAnillo = new Color(1f, 0.82f, 0.2f, 0.95f);
         private static readonly Color ColorPunto = new Color(1f, 0.82f, 0.2f, 0.9f);
@@ -132,8 +143,10 @@ namespace DigitalTwin.MR
                     var d = destinos[i];
                     cartel.IndiceNodo = d.IndiceNodo;
                     cartel.Etiqueta.text = d.Etiqueta;
-                    // Posición FINAL: la regla de altura la decide el navegador (ver cabecera).
-                    cartel.Raiz.transform.position = d.Posicion;
+                    // El lienzo se desplaza para que EL ANILLO caiga exactamente en la posición
+                    // recibida: la altura del nodo es la altura del marcador que se ve.
+                    cartel.Raiz.transform.position =
+                        d.Posicion - Vector3.up * (DesfaseAnilloPx * AnchoMetros / 240f);
                     cartel.Raiz.SetActive(true);
                 }
                 else

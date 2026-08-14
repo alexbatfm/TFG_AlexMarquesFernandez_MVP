@@ -33,12 +33,22 @@ namespace DigitalTwin.MR
     /// El viaje reutiliza el desplazamiento del navegador, que aplica el criterio de
     /// escritorio para trayectos largos: por encima de 12 m, salto instantáneo. Con trece
     /// zonas repartidas por la planta, ese es el caso normal del menú.
+    ///
+    /// DESDE EL 15-08 ES ADEMÁS EL CONTENEDOR DE CONTROLES del modo: bajo las zonas van la
+    /// fila de ILUMINACIÓN SOLAR (muestra el estado —«fija», «hora real», «hora real (es de
+    /// noche)»— y lo alterna al pulsarla; era una función construida e inalcanzable desde el
+    /// visor, porque su único control vivía en el menú de ajustes de escritorio, que no se
+    /// construye bajo XR) y un PIE DE LEYENDA con los gestos del menú. Una sola pieza
+    /// invocable con un solo botón, en lugar de dos superficies que aprender; en modo anclado
+    /// nada de esto existe, porque el menú no se crea allí.
     /// </summary>
     public class MRMenuZonas : MonoBehaviour
     {
         private const float AnchoPx = 460f;
         private const float AltoCabeceraPx = 56f;
         private const float AltoFilaPx = 46f;
+        private const float AltoSeparadorPx = 10f;
+        private const float AltoPiePx = 40f;
         private const float MargenPx = 10f;
         private const float AnchoMetros = 0.42f;
 
@@ -72,6 +82,12 @@ namespace DigitalTwin.MR
         private readonly List<Fila> _filas = new List<Fila>();
         private int _filaSenalada = -1;
 
+        // Fila de iluminación solar (contenedor de controles del modo, ver cabecera).
+        private BoxCollider _volumenSolar;
+        private Image _fondoSolar;
+        private Text _textoSolar;
+        private bool _solarSenalada;
+
         public void Initialize(MRControllerRig rig, Camera camara, MRNodeNavigator navegador,
                                SceneModelIndex index)
         {
@@ -95,7 +111,9 @@ namespace DigitalTwin.MR
 
         private void Construir()
         {
-            float altoPx = AltoCabeceraPx + _zonas.Count * AltoFilaPx + MargenPx * 2f;
+            float altoPx = AltoCabeceraPx + _zonas.Count * AltoFilaPx
+                         + AltoSeparadorPx + AltoFilaPx      // fila de iluminación solar
+                         + AltoPiePx + MargenPx * 2f;        // pie de leyenda
             var canvas = DigitalTwin.UI.RuntimeUIFactory.CreateWorldCanvas(
                 "~MenuZonasAR", anchoPx: AnchoPx, altoPx: altoPx, anchoMetros: AnchoMetros);
             _raiz = (RectTransform)canvas.transform;
@@ -158,7 +176,56 @@ namespace DigitalTwin.MR
                 y += AltoFilaPx;
             }
 
+            // --- Fila de iluminación solar: muestra el estado, no alterna a ciegas ---------
+            y += AltoSeparadorPx;
+            var solarRect = DigitalTwin.UI.RuntimeUIFactory.CreateRect(_raiz, "IluminacionSolar");
+            solarRect.anchorMin = solarRect.anchorMax = new Vector2(0.5f, 1f);
+            solarRect.pivot = new Vector2(0.5f, 1f);
+            solarRect.anchoredPosition = new Vector2(0f, -y);
+            solarRect.sizeDelta = new Vector2(AnchoPx - MargenPx * 2f, AltoFilaPx);
+
+            _fondoSolar = DigitalTwin.UI.RuntimeUIFactory.CreatePanel(solarRect, "Fondo",
+                new Color(1f, 0.82f, 0.2f, 0.10f));
+            DigitalTwin.UI.RuntimeUIFactory.StretchToParent((RectTransform)_fondoSolar.transform);
+            if (material != null) _fondoSolar.material = material;
+
+            _textoSolar = DigitalTwin.UI.RuntimeUIFactory.CreateText(solarRect, "Texto", "",
+                20, TextAnchor.MiddleLeft, ColorTextoNormal);
+            var rtSolar = (RectTransform)_textoSolar.transform;
+            DigitalTwin.UI.RuntimeUIFactory.StretchToParent(rtSolar);
+            rtSolar.offsetMin = new Vector2(18f, 0f);
+            rtSolar.offsetMax = new Vector2(-10f, 0f);
+            if (material != null) _textoSolar.material = material;
+
+            _volumenSolar = solarRect.gameObject.AddComponent<BoxCollider>();
+            _volumenSolar.isTrigger = true;
+            _volumenSolar.size = new Vector3(AnchoPx - MargenPx * 2f, AltoFilaPx, 1f);
+            _volumenSolar.center = Vector3.zero;
+            y += AltoFilaPx;
+
+            // --- Pie de leyenda: los gestos del menú, dichos en el propio menú -------------
+            var pie = DigitalTwin.UI.RuntimeUIFactory.CreateText(_raiz, "Pie",
+                "Gatillo: elegir (viaja hasta la zona)  ·  A o X: cerrar",
+                16, TextAnchor.MiddleCenter, new Color(0.65f, 0.68f, 0.73f, 1f));
+            var rtPie = (RectTransform)pie.transform;
+            rtPie.anchorMin = rtPie.anchorMax = new Vector2(0.5f, 1f);
+            rtPie.pivot = new Vector2(0.5f, 1f);
+            rtPie.anchoredPosition = new Vector2(0f, -y);
+            rtPie.sizeDelta = new Vector2(AnchoPx - MargenPx * 2f, AltoPiePx);
+            if (material != null) pie.material = material;
+
             _raiz.gameObject.SetActive(false);
+        }
+
+        /// <summary>Texto de la fila solar, siempre con el estado delante: «hora real (es de
+        /// noche)» explica por qué la escena está oscura sin que nadie pregunte.</summary>
+        private void RefrescarTextoSolar()
+        {
+            if (_textoSolar == null) return;
+            var solar = Visual.SolarLightingController.Instancia;
+            _textoSolar.text = solar != null
+                ? $"Iluminacion solar: {solar.Descripcion}  (pulsar para cambiar)"
+                : "Iluminacion solar: no disponible";
         }
 
         private void Update()
@@ -171,6 +238,7 @@ namespace DigitalTwin.MR
             // Interacción propia mientras está abierto (el controlador de interacción cede el
             // rayo): fila señalada por los volúmenes, gatillo para elegir.
             _filaSenalada = -1;
+            _solarSenalada = false;
             float mejorDist = float.MaxValue;
             if (_rig.TryGetRayo(out Ray rayo))
             {
@@ -183,6 +251,14 @@ namespace DigitalTwin.MR
                         _filaSenalada = i;
                     }
                 }
+                if (_volumenSolar != null &&
+                    _volumenSolar.Raycast(rayo, out RaycastHit hitSolar, 20f) &&
+                    hitSolar.distance < mejorDist)
+                {
+                    mejorDist = hitSolar.distance;
+                    _filaSenalada = -1;
+                    _solarSenalada = true;
+                }
             }
 
             string salaActual = _navegador != null ? _navegador.SalaActual : string.Empty;
@@ -194,10 +270,35 @@ namespace DigitalTwin.MR
                 _filas[i].Texto.color = esActual ? ColorTextoSalaActual : ColorTextoNormal;
                 _filas[i].Texto.fontStyle = esActual ? FontStyle.Bold : FontStyle.Normal;
             }
+            if (_fondoSolar != null)
+                _fondoSolar.color = _solarSenalada ? ColorFilaSenalada
+                                                   : new Color(1f, 0.82f, 0.2f, 0.10f);
 
-            _rig.MostrarImpacto(_filaSenalada >= 0 ? mejorDist : 0f, _filaSenalada >= 0);
+            bool haySenal = _filaSenalada >= 0 || _solarSenalada;
+            _rig.MostrarImpacto(haySenal ? mejorDist : 0f, haySenal);
 
-            if (_filaSenalada >= 0 && _rig.GatilloPulsadoEsteFrame())
+            if (!_rig.GatilloPulsadoEsteFrame()) return;
+
+            if (_solarSenalada)
+            {
+                // El menú se queda abierto: el sentido de la fila es VER el estado nuevo.
+                var solar = Visual.SolarLightingController.Instancia;
+                if (solar != null)
+                {
+                    solar.Alternar();
+                    Debug.LogWarning($"[DigitalTwin][AR] Iluminacion solar alternada desde el " +
+                                     $"menu: ahora '{solar.Descripcion}'.");
+                }
+                else
+                {
+                    Debug.LogWarning("[DigitalTwin][AR] Iluminacion solar no disponible: no hay " +
+                                     "controlador creado.");
+                }
+                RefrescarTextoSolar();
+                return;
+            }
+
+            if (_filaSenalada >= 0)
             {
                 var fila = _filas[_filaSenalada];
                 // Se cierra en cualquier caso, como en escritorio: si se elige la sala en la
@@ -235,10 +336,13 @@ namespace DigitalTwin.MR
                            + Vector3.up * (-altoMetros * 0.5f + 0.10f);
             _raiz.rotation = Quaternion.LookRotation(mirada, Vector3.up);
 
+            RefrescarTextoSolar();
             _raiz.gameObject.SetActive(true);
             Abierto = true;
+            var solarAbierto = Visual.SolarLightingController.Instancia;
             Debug.LogWarning($"[DigitalTwin][AR] Menu de zonas abierto ({_filas.Count} zonas; " +
-                             $"sala actual: '{(_navegador != null ? _navegador.SalaActual : "?")}').");
+                             $"sala actual: '{(_navegador != null ? _navegador.SalaActual : "?")}'; " +
+                             $"iluminacion solar: '{(solarAbierto != null ? solarAbierto.Descripcion : "no disponible")}').");
         }
 
         private void Cerrar()
