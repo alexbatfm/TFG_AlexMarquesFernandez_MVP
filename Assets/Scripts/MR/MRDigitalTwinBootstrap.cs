@@ -248,7 +248,7 @@ namespace DigitalTwin.MR
             // colocarlo para que el borde superior no invada la línea de visión. Si se vuelve a
             // tocar este valor, hay que revisar el otro.
             var canvas = DigitalTwin.UI.RuntimeUIFactory.CreateWorldCanvas("DigitalTwinCanvasMR",
-                                                                           anchoMetros: 0.58f);
+                                                                           anchoMetros: 0.70f);
 
             var panelGo = new GameObject("~MetadataPanelMR");
             Object.DontDestroyOnLoad(panelGo);
