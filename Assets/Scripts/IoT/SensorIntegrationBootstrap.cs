@@ -40,8 +40,13 @@ namespace DigitalTwin.IoT
                     panel.RefreshIfShowing(meta);
             };
 
-            Debug.Log($"[DigitalTwin][IoT] Middleware MySQL iniciado ({service.Host}:{service.Port}/{service.Database}, " +
-                      $"sondeo cada {service.PollIntervalSeconds}s). {index.Sensors.Count} sensores EQE... detectados en el modelo.");
+            // LogWarning y no Log, y CadenaDeConexionSegura en vez de service.Host: la primera
+            // razón es que las compilaciones que no son de desarrollo filtran Log del logcat y
+            // esta línea es la que dice contra qué servidor se ha arrancado; la segunda, que
+            // service.Host es el anfitrión de escritorio y en el visor se usa el remoto, así que
+            // registrarlo aquí daba una dirección que no era la que se estaba usando.
+            Debug.LogWarning($"[DigitalTwin][IoT] Middleware MySQL iniciado contra {service.CadenaDeConexionSegura}, " +
+                             $"sondeo cada {service.PollIntervalSeconds}s. {index.Sensors.Count} sensores EQE... detectados en el modelo.");
         }
     }
 }

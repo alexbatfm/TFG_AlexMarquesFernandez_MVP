@@ -34,29 +34,26 @@ namespace DigitalTwin.IoT
     /// </summary>
     public class MySqlSensorPollingService : MonoBehaviour
     {
-        [Header("Conexión (ver TFG/utility/informacion_mysql-gemelo-digital.txt)")]
+        [Header("Conexión (valores de desarrollo; producción en backend.json)")]
         [Tooltip("Anfitrión para la versión de escritorio, donde el contenedor corre en la misma " +
                  "máquina. En el visor se usa HostRemoto: ver la nota de HostEfectivo.")]
         public string Host = "127.0.0.1";
 
         /// <summary>
-        /// Dirección del equipo que aloja el contenedor, vista desde la red local.
+        /// Dirección del equipo que aloja el contenedor, vista desde el visor.
         ///
         /// Hace falta porque el visor es un dispositivo Android autónomo: tiene su propia pila de
         /// red y <c>127.0.0.1</c> se refiere a sí mismo, no al ordenador de desarrollo. El síntoma
         /// es inequívoco en el registro --- «Unable to connect to any of the specified MySQL
         /// hosts» contra 127.0.0.1 --- y se confirmó en la primera ejecución en el visor.
         ///
-        /// <b>Aquí se cambia la dirección.</b> Este componente lo crea
-        /// <see cref="SensorIntegrationBootstrap"/> en tiempo de ejecución, así que no está
-        /// colocado en ninguna escena y su valor no aparece en el Inspector: el único sitio donde
-        /// ajustarlo es esta línea, y hay que recompilar. Se deja así a conciencia, porque una
-        /// pantalla de configuración de red dentro del visor es bastante trabajo para un dato que
-        /// solo cambia al mudarse de red.
-        ///
-        /// Averígualo con <c>ipconfig</c> en el equipo que aloja el contenedor, y recuerda abrir el
-        /// puerto 3306 para conexiones entrantes en el cortafuegos de Windows: sin esa regla la
-        /// conexión se rechaza igual, con el mismo mensaje de error, y es fácil culpar a la IP.
+        /// <b>El valor de producción no está aquí.</b> Todos los campos de esta cabecera son los
+        /// del contenedor local de desarrollo y se sustituyen en arranque por los de
+        /// <c>backend.json</c> (<see cref="BackendConfig"/>), que es lo que permite cambiar de
+        /// servidor sin recompilar y lo que mantiene la contraseña de producción fuera del
+        /// repositorio. Los valores compilados siguen siendo los locales a propósito: trabajar en
+        /// casa contra el contenedor de Docker no debe exigir conexión a Internet ni fichero
+        /// alguno.
         /// </summary>
         public string HostRemoto = "127.0.0.1";
 
@@ -64,6 +61,22 @@ namespace DigitalTwin.IoT
         public string Database = "periscoopedb";
         public string User = "root";
         public string Password = "root_password";
+
+        /// <summary>
+        /// Modo TLS de la conexión, configurable desde <c>backend.json</c>.
+        ///
+        /// Era <c>None</c> fijo mientras la base de datos vivía en <c>127.0.0.1</c>, donde el
+        /// tráfico no sale de la máquina. Con el contenedor alojado en Internet, las credenciales
+        /// y las lecturas atraviesan una red pública, así que el valor por defecto pasa a
+        /// <c>Preferred</c>: cifra siempre que el servidor ofrezca TLS, y MySQL 8.4 lo ofrece de
+        /// serie porque genera su propio certificado al inicializar el directorio de datos.
+        ///
+        /// No se sube a <c>Required</c> por defecto porque esa opción convierte cualquier fallo de
+        /// la pila TLS del visor en ausencia total de telemetría, y eso no se ha podido probar
+        /// todavía en el dispositivo. La comprobación está en la lista previa a la defensa; si
+        /// resultara fallar, se baja a <c>None</c> desde el fichero, sin recompilar.
+        /// </summary>
+        public string SslMode = "Preferred";
 
         [Header("Sondeo")]
         [Tooltip("Cada cuánto se consulta la base de datos por lecturas nuevas.")]
@@ -156,16 +169,84 @@ namespace DigitalTwin.IoT
 
         private string ConnectionString =>
             $"Server={HostEfectivo};Port={Port};User ID={User};Password={Password};Database={Database};" +
-            "SslMode=None;AllowPublicKeyRetrieval=True;ConnectionTimeout=5;DefaultCommandTimeout=10;";
+            $"SslMode={SslMode};AllowPublicKeyRetrieval=True;ConnectionTimeout=5;DefaultCommandTimeout=10;";
+
+        /// <summary>
+        /// La misma cadena que <c>ConnectionString</c> pero sin la contraseña, para poder
+        /// registrarla. El registro del visor se vuelca con <c>adb logcat</c> a un fichero que
+        /// después se adjunta como evidencia en los anexos: una contraseña ahí dentro sería una
+        /// contraseña publicada.
+        /// </summary>
+        public string CadenaDeConexionSegura =>
+            $"{User}@{HostEfectivo}:{Port}/{Database} (SslMode={SslMode}, " +
+            $"contraseña de {Password?.Length ?? 0} caracteres)";
+
+        /// <summary>
+        /// Sustituye los valores compilados por los de <c>backend.json</c> si existe.
+        ///
+        /// En <c>Awake</c> y no en <c>Start</c> porque el bucle de sondeo arranca en <c>Start</c>:
+        /// leer la configuración después de haber abierto la primera conexión dejaría el primer
+        /// ciclo apuntando al servidor equivocado, y con él la primera marca de agua.
+        /// </summary>
+        private void Awake()
+        {
+            var config = new BackendConfig
+            {
+                host = Host,
+                hostRemoto = HostRemoto,
+                puerto = Port,
+                baseDeDatos = Database,
+                usuario = User,
+                contrasena = Password,
+                sslMode = SslMode,
+                segundosEntreSondeos = PollIntervalSeconds,
+            };
+
+            if (!BackendConfigLoader.Aplicar(config)) return;
+
+            Host = config.host;
+            HostRemoto = config.hostRemoto;
+            Port = config.puerto;
+            Database = config.baseDeDatos;
+            User = config.usuario;
+            Password = config.contrasena;
+            SslMode = config.sslMode;
+            PollIntervalSeconds = config.segundosEntreSondeos;
+        }
 
         private void Start()
         {
             _running = true;
+
+            // Un bucle local en el visor no puede alcanzar a ninguna base de datos que no sea el
+            // propio visor, así que este caso solo se da cuando falta backend.json o cuando lleva
+            // el anfitrión sin rellenar. Se distingue del fallo de red porque aquí se sabe la
+            // causa exacta, y con ella la solución: sin este aviso, el síntoma es idéntico al de
+            // un servidor caído y se pierde media hora buscando en el sitio equivocado.
+            if (Application.platform == RuntimePlatform.Android && EsBuclelocal(HostEfectivo))
+                Debug.LogError($"[DigitalTwin][IoT] El anfitrión configurado es {HostEfectivo}, que en " +
+                               "el visor se refiere al propio visor: NO habrá telemetría. Falta " +
+                               $"{BackendConfigLoader.NombreFichero} en {Application.persistentDataPath} " +
+                               "o no trae 'hostRemoto'. Origen de la configuración en uso: " +
+                               $"{BackendConfigLoader.UltimoOrigen}.");
+
             // Warning y no Log: cuando el sondeo del 14-08 «se puso raro», esta linea y la del
             // catalogo eran las que habrian dicho que estaba haciendo, y una compilacion que no
             // es de desarrollo las filtraba del logcat.
-            Debug.LogWarning($"[DigitalTwin][IoT] Iniciando sondeo contra {HostEfectivo}:{Port}/{Database} cada {PollIntervalSeconds}s (tope {LimiteFilasPorCiclo} filas/tabla/ciclo).");
+            Debug.LogWarning($"[DigitalTwin][IoT] Iniciando sondeo contra {CadenaDeConexionSegura} cada " +
+                             $"{PollIntervalSeconds}s (tope {LimiteFilasPorCiclo} filas/tabla/ciclo). " +
+                             $"Configuración tomada de: {BackendConfigLoader.UltimoOrigen}.");
             _ = PollLoopAsync();
+        }
+
+        /// <summary>Direcciones que se refieren a la propia máquina. Se comprueba el nombre además
+        /// de las dos formas numéricas porque <c>localhost</c> escrito en el fichero produce el
+        /// mismo fallo y no lo detectaría una comparación con <c>127.0.0.1</c>.</summary>
+        private static bool EsBuclelocal(string anfitrion)
+        {
+            if (string.IsNullOrWhiteSpace(anfitrion)) return true;
+            string h = anfitrion.Trim().ToLowerInvariant();
+            return h == "localhost" || h == "::1" || h.StartsWith("127.");
         }
 
         private void OnDestroy()
