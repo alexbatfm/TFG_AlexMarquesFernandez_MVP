@@ -105,3 +105,10 @@ InitTestScene*.unity*
 
 # Auto-generated scenes by play mode tests
 /[Aa]ssets/[Ii]nit[Tt]est[Ss]cene*.unity*
+
+# Configuracion del backend de telemetria (BackendConfig.cs). Contiene el servidor y las
+# credenciales de la base de datos alojada, asi que no se versiona: los valores de produccion
+# viven solo en la maquina de Alex y en el visor. Los valores compilados, que son los del
+# contenedor local, si estan en el codigo. Procedimiento en
+# TFG/docs/roadmap/DESPLIEGUE-nube-y-publicacion.md
+/backend.json
