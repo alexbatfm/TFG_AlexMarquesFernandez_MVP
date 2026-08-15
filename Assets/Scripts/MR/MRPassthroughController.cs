@@ -1,5 +1,6 @@
 using UnityEngine;
 #if UNITY_ANDROID && !UNITY_EDITOR
+using UnityEngine.XR.OpenXR; // OpenXRSettings, para consultar el estado de la sesion
 using VIVE.OpenXR;              // XrResult y sus miembros (XR_SUCCESS)
 using VIVE.OpenXR.Passthrough;  // PassthroughAPI y XrPassthroughHTC
 // El paquete declara XrPassthroughHTC en dos espacios de nombres, Passthrough y
@@ -36,6 +37,23 @@ namespace DigitalTwin.MR
     /// borrando a color sólido con alfa cero. Es la mitad que suele olvidarse: se crea la capa
     /// correctamente, no se ve nada, y no hay error en ninguna parte porque no ha fallado nada.
     ///
+    /// LA CAPA MUERE CON LA SESIÓN OPENXR, Y HAY QUE ENTERARSE (corrección del 15-08, noche).
+    /// El SDK del fabricante destruye TODAS las capas de transparencia cuando la sesión OpenXR
+    /// se destruye (<c>VivePassthrough.OnSessionDestroy</c> las recorre y las libera; la
+    /// documentación de <c>CreatePlanarPassthrough</c> lo declara: «Passthroughs will be
+    /// destroyed automatically when the current XrSession is destroyed»). La sesión se destruye
+    /// cuando el sistema toma el control del visor —por ejemplo, al configurar el límite de
+    /// seguridad, al pasar por el menú del sistema o al retirarse el visor el tiempo
+    /// suficiente—. La primera versión de esta clase no registraba el callback de destrucción
+    /// que ese mismo método ofrece como parámetro, así que tras cualquiera de esos pasos el
+    /// estado interno seguía diciendo «activada» sobre una capa que ya no existía, y como
+    /// <c>Aplicar(true)</c> se fiaba del estado interno, NINGÚN camino de código podía volver a
+    /// encenderla: el vídeo desaparecía para siempre sin una sola línea de error. Es lo
+    /// observado en la prueba del 15-08 por la tarde (modo anclado sin vídeo de principio a
+    /// fin). La corrección tiene tres partes: registrar el callback (el estado refleja la
+    /// muerte de la capa), reconciliar <c>Aplicar(true)</c> contra el runtime en vez de contra
+    /// la creencia (ver <see cref="CapaViva"/>), y recrear la capa sola cuando la sesión vuelve.
+    ///
     /// Estado de partida. El componente arranca desactivado y restaura con exactitud los ajustes
     /// previos de la cámara al apagarse, siguiendo el mismo criterio que
     /// <see cref="DigitalTwin.Visual.SolarLightingController"/>: una opción que altera el
@@ -47,7 +65,10 @@ namespace DigitalTwin.MR
 
         public static MRPassthroughController Instancia { get; private set; }
 
-        /// <summary>Cierto si la capa está creada y la cámara preparada para dejarla ver.</summary>
+        /// <summary>Cierto si, según el estado interno, la capa está creada y la cámara
+        /// preparada para dejarla ver. Desde el 15-08 este estado se corrige solo cuando el
+        /// runtime destruye la capa (callback de sesión), pero la señal que el modo anclado
+        /// acepta como «hay vídeo» es <see cref="ConfirmadaActiva"/>, no esta.</summary>
         public bool Activado { get; private set; }
 
         /// <summary>
@@ -66,6 +87,14 @@ namespace DigitalTwin.MR
 #endif
             }
         }
+
+        /// <summary>
+        /// Cierto solo si el estado interno dice «activada» Y la capa existe ahora mismo en la
+        /// lista de capas vivas del runtime. Es la única señal que el modo anclado acepta como
+        /// confirmación de que hay vídeo: el estado interno puede quedarse obsoleto (la capa
+        /// muere con la sesión OpenXR), y la lista del runtime no.
+        /// </summary>
+        public bool ConfirmadaActiva => Activado && CapaViva();
 
         public string Descripcion
         {
@@ -86,6 +115,12 @@ namespace DigitalTwin.MR
 #if UNITY_ANDROID && !UNITY_EDITOR
         private XrPassthroughHTC _capa;
         private bool _capaCreada;
+
+        /// <summary>Puesto a cierto por el callback de destrucción de sesión: la capa murió con
+        /// la sesión y hay que recrearla en cuanto el runtime tenga sesión otra vez.</summary>
+        private bool _recrearAlVolverLaSesion;
+        private float _proximoIntentoDeRecreacion;
+        private const float SegundosEntreIntentosDeRecreacion = 2f;
 #endif
 
         public static MRPassthroughController Crear()
@@ -169,15 +204,118 @@ namespace DigitalTwin.MR
             PlayerPrefs.Save();
         }
 
+        /// <summary>
+        /// Enciende o apaga la transparencia. La rama de encendido es IDEMPOTENTE DE VERDAD y se
+        /// puede llamar sin condición: no se fía del estado interno, se reconcilia con el
+        /// runtime. Si la capa sigue viva, solo reafirma el borrado de la cámara (barato, y de
+        /// paso repara cualquier reescritura); si el estado decía «activada» pero la capa ya no
+        /// existe —la sesión OpenXR se destruyó—, lo denuncia y la recrea. La guarda anterior
+        /// (<c>if (activar == Activado) return;</c>) convertía exactamente ese caso en un
+        /// silencio sin salida.
+        /// </summary>
         public void Aplicar(bool activar)
         {
-            if (activar == Activado) return;
+            if (!activar)
+            {
+                if (!Activado) return;
+                Apagar();
+                Activado = false;
+                Debug.LogWarning("[DigitalTwin][AR] Passthrough desactivado.");
+                return;
+            }
 
-            if (activar) { if (!Encender()) return; }
-            else Apagar();
+            if (Activado && CapaViva())
+            {
+                // Ya encendida de verdad: reafirmar el borrado con alfa cero no cuesta nada y
+                // deja la llamada sin condición previa. Sin traza: este camino es el habitual
+                // en los reintentos y anegaría el registro.
+                PrepararCamaraParaLaCapa();
+                return;
+            }
 
-            Activado = activar;
-            Debug.LogWarning("[DigitalTwin][AR] Passthrough " + (Activado ? "activado" : "desactivado") + ".");
+            if (Activado)
+            {
+                // El estado decía «activada» pero el runtime ya no tiene la capa. Con el
+                // callback de sesión registrado este camino no debería darse; si se da, es que
+                // la capa murió por una vía sin callback, y callarlo sería repetir el fallo
+                // del 15-08.
+                Debug.LogError("[DigitalTwin][AR] El estado decia transparencia activada pero la " +
+                               "capa ya no existe en el runtime (sesion OpenXR reiniciada sin " +
+                               "aviso registrado): se recrea.");
+                DescartarCapaMuerta();
+                Activado = false;
+            }
+
+            if (Encender())
+            {
+                Activado = true;
+                Debug.LogWarning("[DigitalTwin][AR] Passthrough activado.");
+            }
+        }
+
+        /// <summary>
+        /// Cierto si la capa creada por esta clase figura ahora mismo en la lista de capas del
+        /// runtime. Fuera de Android es siempre falso: no hay capa posible.
+        /// </summary>
+        public bool CapaViva()
+        {
+#if UNITY_ANDROID && !UNITY_EDITOR
+            if (!_capaCreada) return false;
+            var capas = PassthroughAPI.GetCurrentPassthroughLayerIDs();
+            return capas != null && capas.Contains(_capa);
+#else
+            return false;
+#endif
+        }
+
+#if UNITY_ANDROID && !UNITY_EDITOR
+        /// <summary>
+        /// Callback registrado en la creación de la capa: el SDK lo invoca cuando la sesión
+        /// OpenXR va a destruirse y con ella todas las capas de transparencia. Aquí NO se
+        /// recrea nada —la sesión está muriéndose—; se corrige el estado para que refleje la
+        /// realidad y se deja programada la recreación para cuando la sesión vuelva.
+        /// </summary>
+        private void AlDestruirseLaSesionOpenXR(XrPassthroughHTC capa)
+        {
+            DescartarCapaMuerta();
+            Activado = false;
+            _recrearAlVolverLaSesion = true;
+            _proximoIntentoDeRecreacion = 0f;
+            Debug.LogError("[DigitalTwin][AR] La sesion OpenXR se ha destruido y el runtime ha " +
+                           "retirado la capa de transparencia (ocurre al pasar por el sistema: " +
+                           "limite de seguridad, menu, visor retirado). El estado pasa a " +
+                           "desactivado y la capa se recreara sola cuando la sesion vuelva.");
+        }
+
+        private void Update()
+        {
+            if (!_recrearAlVolverLaSesion || Activado) return;
+            if (Time.unscaledTime < _proximoIntentoDeRecreacion) return;
+            _proximoIntentoDeRecreacion = Time.unscaledTime + SegundosEntreIntentosDeRecreacion;
+
+            if (!SesionOpenXRCreada()) return; // aún sin sesión: se sigue esperando
+
+            Debug.LogWarning("[DigitalTwin][AR] La sesion OpenXR ha vuelto: se recrea la capa " +
+                             "de transparencia.");
+            Aplicar(true);
+            if (Activado) _recrearAlVolverLaSesion = false;
+        }
+
+        private static bool SesionOpenXRCreada()
+        {
+            var ajustes = OpenXRSettings.Instance;
+            var feature = ajustes != null ? ajustes.GetFeature<VivePassthrough>() : null;
+            return feature != null && feature.XrSessionCreated;
+        }
+#endif
+
+        private void DescartarCapaMuerta()
+        {
+#if UNITY_ANDROID && !UNITY_EDITOR
+            // La capa ya no existe en el runtime: no hay nada que destruir, solo olvidarla.
+            _capaCreada = false;
+            _capa = default;
+#endif
         }
 
         private bool Encender()
@@ -200,23 +338,30 @@ namespace DigitalTwin.MR
 
 #if UNITY_ANDROID && !UNITY_EDITOR
             // 1) La capa. Underlay: el motor compone su fotograma sobre el vídeo, no al revés.
-            XrResult res = PassthroughAPI.CreatePlanarPassthrough(out _capa, LayerType.Underlay);
+            // El tercer argumento es el callback de destrucción de sesión: sin él, la muerte de
+            // la capa junto con la sesión OpenXR es invisible para la aplicación (ver la nota
+            // de la clase; es la causa raíz del modo anclado sin vídeo del 15-08).
+            XrResult res = PassthroughAPI.CreatePlanarPassthrough(out _capa, LayerType.Underlay,
+                                                                  AlDestruirseLaSesionOpenXR);
             if (res != XrResult.XR_SUCCESS)
             {
-                // El motivo más probable es que la característica no esté marcada en la pestaña
-                // de Android. Se dice explícitamente porque el síntoma —fondo opaco— es idéntico
-                // al de olvidar el borrado de la cámara, y sin este aviso no se distinguen.
+                // Dos motivos conocidos, y se distinguen por el codigo: XR_ERROR_SESSION_LOST
+                // significa que la sesion OpenXR no existe en este momento (el sistema tiene el
+                // control; se puede reintentar); cualquier otro apunta a la caracteristica
+                // 'VIVE XR Passthrough' sin marcar en la pestana de Android. El sintoma sin esta
+                // traza —fondo opaco— es identico al de olvidar el borrado de la camara.
                 Debug.LogError("[DigitalTwin][AR] No se pudo crear la capa de transparencia (" + res +
-                               "). Comprueba que 'VIVE XR Passthrough' esté marcada en " +
-                               "Project Settings > XR Plug-in Management > OpenXR, pestaña Android.");
+                               "). Si es SESSION_LOST, la sesion OpenXR no esta disponible ahora " +
+                               "mismo y se puede reintentar; si no, comprueba que 'VIVE XR " +
+                               "Passthrough' este marcada en Project Settings > XR Plug-in " +
+                               "Management > OpenXR, pestaña Android.");
                 return false;
             }
             _capaCreada = true;
+            _recrearAlVolverLaSesion = false;
 
             // 2) El borrado de la cámara. Sin esto la capa existe y no se ve.
-            GuardarAjustesCamara();
-            _camara.clearFlags = CameraClearFlags.SolidColor;
-            _camara.backgroundColor = new Color(0f, 0f, 0f, 0f);
+            PrepararCamaraParaLaCapa();
             return true;
 #else
             return false;
@@ -226,14 +371,36 @@ namespace DigitalTwin.MR
         private void Apagar()
         {
 #if UNITY_ANDROID && !UNITY_EDITOR
+            // Apagar es una orden del usuario o del modo: se cancela cualquier recreación
+            // pendiente para que la capa no reaparezca sola tras elegir navegación por nodos.
+            _recrearAlVolverLaSesion = false;
             if (_capaCreada)
             {
-                PassthroughAPI.DestroyPassthrough(_capa);
+                if (CapaViva())
+                {
+                    PassthroughAPI.DestroyPassthrough(_capa);
+                }
+                else
+                {
+                    Debug.LogWarning("[DigitalTwin][AR] Passthrough: la capa ya no existia en el " +
+                                     "runtime (la retiro la destruccion de la sesion); no hay " +
+                                     "nada que destruir.");
+                }
                 _capaCreada = false;
                 _capa = default;
             }
 #endif
             RestaurarAjustesCamara();
+        }
+
+        /// <summary>Borrado a color sólido con alfa cero, guardando antes los ajustes
+        /// originales (una sola vez). Reafirmarlo es barato y repara reescrituras ajenas.</summary>
+        private void PrepararCamaraParaLaCapa()
+        {
+            if (_camara == null) return;
+            GuardarAjustesCamara();
+            _camara.clearFlags = CameraClearFlags.SolidColor;
+            _camara.backgroundColor = new Color(0f, 0f, 0f, 0f);
         }
 
         private void GuardarAjustesCamara()

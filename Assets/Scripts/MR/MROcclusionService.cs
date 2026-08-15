@@ -24,30 +24,32 @@ namespace DigitalTwin.MR
     ///
     /// - LOS SENSORES QUEDAN VISIBLES: son la telemetría que este modo superpone a la realidad.
     ///
-    /// DIAGNÓSTICO TRAS LA PRUEBA DEL 2026-08-13 (modo anclado en negro, sin un solo error).
-    /// Aquel registro no permitía distinguir «el sombreador pinta negro» de «los oclusores no se
-    /// aplicaron» de «la capa de transparencia se apagó». Esta versión hace tres cosas:
+    /// DIAGNÓSTICO SIN CANARIO (desde el 15-08 por la noche). Tras la prueba del 2026-08-13
+    /// (modo anclado en negro sin un solo error) esta clase incorporó un «canario de revelado»:
+    /// seis segundos con los oclusores pintados de verde antes de pasar a solo-profundidad, para
+    /// discriminar en una sola sesión entre «los materiales no se aplican», «el sombreador de
+    /// profundidad pinta» y «todo correcto». La prueba del 14-08 zanjó la cuestión (verde y
+    /// después vídeo: la cadena de oclusión funciona), así que el canario cumplió su función y
+    /// se retiró el 15-08: seis segundos de sala verde en cada arranque eran ya solo ruido, y en
+    /// una defensa serían un ruido muy visible. Se retira entero, no tras una constante a cero:
+    /// código muerto que nadie volvería a activar. Su diseño queda registrado en
+    /// <c>TFG/docs/roadmap/PRUEBA-AR-2-2026-08-13.md</c> por si otra plataforma obligara a
+    /// reconstruirlo. Lo que se CONSERVA es la parte del diagnóstico que no cuesta nada
+    /// visualmente:
     ///
-    ///  1. Identifica el sombreador en el registro (nombre, soporte, pases, API gráfica): si el
+    ///  1. Identidad del sombreador en el registro (nombre, soporte, pases, API gráfica): si el
     ///     dispositivo lo sustituyó o no lo soporta, se ve; y si no se soporta NO se aplica.
-    ///  2. CANARIO DE REVELADO: los primeros segundos del modo anclado los oclusores se pintan
-    ///     de verde con un material conocido-bueno (el mismo que usa el rayo de los mandos) y
-    ///     después cambian al de solo-profundidad, con una traza en cada instante. Lo observado
-    ///     entre ambas trazas discrimina en una sola sesión: verde visible y luego vídeo de la
-    ///     sala = todo correcto; verde visible y luego NEGRO = el sombreador de profundidad
-    ///     pinta pese a sus tres bloqueos de color; nunca verde = los materiales no se están
-    ///     aplicando a lo que se cree.
-    ///  3. VIGILANCIA DE LA CÁMARA: comprueba y registra clearFlags y color de borrado (con su
-    ///     alfa) al aplicar, tras el canario y periódicamente; si alguien los reescribe mientras
-    ///     la transparencia está activa, lo denuncia y los repara. La composición del vídeo
-    ///     depende de que el fotograma llegue con alfa cero donde no hay geometría.
+    ///  2. Recuento de aplicación: cuántos renderers quedan en solo-profundidad, cuántos
+    ///     elementos se ocultan y cuántas mallas de sensor permanecen visibles.
+    ///  3. VIGILANCIA DE LA CÁMARA (<see cref="MRVigilanciaCamaraAnclado"/>): comprueba y
+    ///     registra clearFlags y color de borrado (con su alfa) al aplicar y a los 5 y 35
+    ///     segundos, junto con el estado REAL de la capa de transparencia (estado interno y
+    ///     capa viva en el runtime, que desde el 15-08 son cosas distintas); si alguien
+    ///     reescribe el borrado mientras la transparencia está activa, lo denuncia y lo repara.
     /// </summary>
     public static class MROcclusionService
     {
         public const string RutaShaderOclusor = "MR/OclusorProfundidad";
-
-        /// <summary>Duración de la fase de revelado en verde, en segundos.</summary>
-        public const float SegundosDeCanario = 6f;
 
         /// <summary>
         /// Aplica la vestimenta de modo anclado. Devuelve false —con el motivo registrado— si el
@@ -125,110 +127,76 @@ namespace DigitalTwin.MR
                 }
             }
 
+            // El material de solo-profundidad se aplica DESDE EL PRIMER FOTOGRAMA del modo
+            // anclado (antes había una fase de revelado en verde; ver la nota de la clase). Se
+            // sustituyen TODAS las ranuras conservando su número: una malla con dos
+            // submateriales que recibiera uno solo dejaría una submalla sin dibujar.
+            int renderersCambiados = 0;
+            foreach (var r in renderersOclusores)
+            {
+                if (r == null) continue;
+                int ranuras = r.sharedMaterials.Length;
+                var materiales = new Material[ranuras];
+                for (int i = 0; i < ranuras; i++) materiales[i] = materialOclusor;
+                r.sharedMaterials = materiales;
+                renderersCambiados++;
+            }
+
             Debug.LogWarning($"[DigitalTwin][AR] Modo anclado: clasificacion aplicada. " +
                              $"{elementosOclusores.Count} elementos oclusores " +
-                             $"({renderersOclusores.Count} renderers), " +
+                             $"({renderersCambiados} renderers en solo-profundidad, cola " +
+                             $"{materialOclusor.renderQueue}), " +
                              $"{elementosOcultados.Count} elementos ocultados (sin render ni " +
                              $"seleccion por rayo), {sensoresVisibles} mallas de sensor visibles.");
 
-            // El canario aplica primero el verde de revelado y, pasados unos segundos, el
-            // material de solo-profundidad; también vigila la cámara. Ver la nota de la clase.
-            var canarioGo = new GameObject("~CanarioOclusionAR");
-            Object.DontDestroyOnLoad(canarioGo);
-            canarioGo.AddComponent<MRCanarioOclusion>()
-                     .Iniciar(renderersOclusores, materialOclusor);
+            // La vigilancia de cámara sigue en pie: es la traza que discrimina un borrado
+            // reescrito de una capa de transparencia muerta.
+            var vigilanciaGo = new GameObject("~VigilanciaCamaraAnclado");
+            Object.DontDestroyOnLoad(vigilanciaGo);
+            vigilanciaGo.AddComponent<MRVigilanciaCamaraAnclado>().Iniciar();
 
             return true;
         }
     }
 
     /// <summary>
-    /// Fase de revelado del modo anclado y vigilancia del estado de cámara/transparencia.
-    /// Componente aparte porque el servicio de oclusión es estático y esto necesita corrutinas.
+    /// Vigilancia del estado de cámara/transparencia en modo anclado. Componente aparte porque
+    /// el servicio de oclusión es estático y esto necesita corrutinas. Es lo que queda del
+    /// antiguo canario de revelado tras retirar la fase verde (ver la nota de
+    /// <see cref="MROcclusionService"/>): las trazas, que valen, sin los seis segundos de sala
+    /// verde, que ya no valían nada.
     /// </summary>
-    internal class MRCanarioOclusion : MonoBehaviour
+    internal class MRVigilanciaCamaraAnclado : MonoBehaviour
     {
-        private static readonly Color VerdeRevelado = new Color(0.15f, 0.85f, 0.35f, 1f);
-
-        private List<Renderer> _oclusores;
-        private Material _materialProfundidad;
-
-        public void Iniciar(List<Renderer> oclusores, Material materialProfundidad)
+        public void Iniciar()
         {
-            _oclusores = oclusores;
-            _materialProfundidad = materialProfundidad;
             StartCoroutine(Secuencia());
         }
 
         private IEnumerator Secuencia()
         {
-            // 1) Verde de revelado con un material conocido-bueno (el mismo ayudante que crea el
-            // material del rayo de los mandos, verificado en el visor). Si estas paredes verdes
-            // NO se ven, los materiales no se están aplicando donde se cree.
-            var verde = DigitalTwin.Core.RuntimeMaterials.CrearSinIluminacion(VerdeRevelado);
-            int pintados = 0;
-            if (verde != null)
-            {
-                pintados = AplicarATodos(verde);
-                Debug.LogWarning($"[DigitalTwin][AR] Canario de oclusion: {pintados} renderers en " +
-                                 $"VERDE de revelado durante {MROcclusionService.SegundosDeCanario:0} s. " +
-                                 "Lo que se observe ahora y justo despues discrimina el fallo: " +
-                                 "verde->video correcto; verde->negro = el sombreador de " +
-                                 "profundidad pinta; nunca verde = los materiales no llegan.");
-            }
-            else
-            {
-                Debug.LogWarning("[DigitalTwin][AR] Canario de oclusion: sin sombreador basico para " +
-                                 "el verde; se pasa directamente a solo-profundidad.");
-            }
-
-            RegistrarEstadoCamara("al aplicar el canario");
-            yield return new WaitForSeconds(MROcclusionService.SegundosDeCanario);
-
-            // 2) Cambio a solo-profundidad. A partir de esta traza, lo correcto es ver el vídeo
-            // de la sala a través de donde estaba el verde, con los sensores ocluidos por sala.
-            int cambiados = AplicarATodos(_materialProfundidad);
-            Debug.LogWarning($"[DigitalTwin][AR] Canario terminado: {cambiados} renderers cambiados " +
-                             "a solo-profundidad (cola " + _materialProfundidad.renderQueue + "). " +
-                             "Si AHORA se ve negro donde habia verde, el sombreador de profundidad " +
-                             "esta pintando pese a ColorMask 0 + Blend Zero One.");
-
-            // 3) Vigilancia de la cámara: inmediatamente, a los 5 s y a los 35 s. Si alguien
-            // reescribe el borrado con alfa distinto de cero, se denuncia y se repara.
-            RegistrarEstadoCamara("tras el cambio a solo-profundidad");
+            // Tres instantes: inmediato, a los 5 s y a los 35 s. Si alguien reescribe el
+            // borrado con alfa distinto de cero, se denuncia y se repara.
+            RegistrarEstadoCamara("al aplicar la oclusion");
             yield return new WaitForSeconds(5f);
             RegistrarEstadoCamara("5 s despues");
             yield return new WaitForSeconds(30f);
             RegistrarEstadoCamara("35 s despues");
         }
 
-        private int AplicarATodos(Material material)
-        {
-            int aplicados = 0;
-            foreach (var r in _oclusores)
-            {
-                if (r == null) continue;
-                // Se sustituyen TODAS las ranuras conservando su número: una malla con dos
-                // submateriales que recibiera uno solo dejaría una submalla sin dibujar.
-                int ranuras = r.sharedMaterials.Length;
-                var materiales = new Material[ranuras];
-                for (int i = 0; i < ranuras; i++) materiales[i] = material;
-                r.sharedMaterials = materiales;
-                aplicados++;
-            }
-            return aplicados;
-        }
-
         /// <summary>
         /// Registra clearFlags y color de borrado (con alfa) y los repara si la transparencia
         /// está activa y alguien los ha reescrito. La composición del vídeo depende de que el
-        /// fotograma llegue con alfa cero allí donde no hay geometría.
+        /// fotograma llegue con alfa cero allí donde no hay geometría. Desde el 15-08 la traza
+        /// separa «capa activa» (estado interno) de «capa viva» (existe en el runtime): la
+        /// prueba de esa tarde demostró que pueden divergir, y esta línea es la que lo delata.
         /// </summary>
         private static void RegistrarEstadoCamara(string momento)
         {
             var camara = Camera.main;
             var passthrough = MRPassthroughController.Instancia;
             bool capaActiva = passthrough != null && passthrough.Activado;
+            bool capaViva = passthrough != null && passthrough.CapaViva();
 
             if (camara == null)
             {
@@ -239,8 +207,17 @@ namespace DigitalTwin.MR
 
             Color fondo = camara.backgroundColor;
             Debug.LogWarning($"[DigitalTwin][AR] Estado camara/transparencia ({momento}): capa " +
-                             $"activa={capaActiva}, clearFlags={camara.clearFlags}, " +
+                             $"activa={capaActiva}, capa viva en el runtime={capaViva}, " +
+                             $"clearFlags={camara.clearFlags}, " +
                              $"fondo=({fondo.r:0.00},{fondo.g:0.00},{fondo.b:0.00},{fondo.a:0.00}).");
+
+            if (capaActiva && !capaViva)
+            {
+                Debug.LogError("[DigitalTwin][AR] El estado dice capa activa pero el runtime no " +
+                               "la tiene: la sesion OpenXR la destruyo. El controlador de " +
+                               "transparencia deberia recrearla solo; si esta linea reaparece " +
+                               "en la siguiente vigilancia, no lo esta haciendo.");
+            }
 
             if (capaActiva &&
                 (camara.clearFlags != CameraClearFlags.SolidColor || fondo.a > 0.001f))

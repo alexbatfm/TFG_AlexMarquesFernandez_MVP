@@ -42,6 +42,20 @@ namespace DigitalTwin.MR
     /// cero basura por fotograma) y los metadatos se resuelven por diccionario
     /// collider→elemento construido una sola vez, en lugar de subir por la jerarquía en cada
     /// impacto de cada fotograma.
+    ///
+    /// ETIQUETA DE SEÑALADO, SOLO EN MODO ANCLADO (15-08, noche). En anclado la geometría es
+    /// oclusor invisible: al apuntar, lo único visible era el punto de impacto del rayo, y en
+    /// una sala a oscuras el usuario no podía responder «qué estoy señalando» sin disparar y
+    /// leer la ficha —justo lo que no puede hacer si duda de si va a acertar—. La respuesta es
+    /// una etiqueta flotante junto al punto de impacto con el nombre del elemento señalado,
+    /// continua y discreta, autoiluminada (material de interfaz siempre visible, el mismo de
+    /// los indicadores) para que no dependa de la iluminación de la sala ni la tape la
+    /// escritura de profundidad de los oclusores. Se eligió esta vía y no reforzar el realce de
+    /// contorno porque dibujar contornos en cada apuntado equivaldría a redibujar el edificio
+    /// pieza a pieza, que es lo que el modo anclado existe para no hacer; el marcador de
+    /// impacto ya dice si hay elemento válido (color), y la etiqueta añade el cuál. En
+    /// navegación por nodos no se crea: allí el edificio entero es visible e iluminado y el
+    /// elemento se identifica solo.
     /// </summary>
     public class MRInteractionController : MonoBehaviour
     {
@@ -89,10 +103,23 @@ namespace DigitalTwin.MR
         private int _impactosDelFotograma;
         private readonly System.Diagnostics.Stopwatch _crono = new System.Diagnostics.Stopwatch();
 
+        // --- Etiqueta de señalado (solo modo anclado; ver la nota de la clase) --------------
+        /// <summary>Ancho del rótulo a un metro de distancia; la escala crece con la distancia
+        /// para mantener el tamaño angular (~11°) constante.</summary>
+        private const float AnchoEtiquetaMetros = 0.20f;
+        private const float DistanciaMinimaEscala = 0.5f;
+        private const float DistanciaMaximaEscala = 6f;
+        private const int MaximoCaracteresEtiqueta = 40;
+        private RectTransform _etiquetaRaiz;
+        private UnityEngine.UI.Text _etiquetaTexto;
+        private Vector3 _etiquetaEscalaBase;
+        private IfcMetadata _metaEtiquetado;
+
         public void Initialize(MRControllerRig rig, MetadataPanelController panel,
                                WorldPanelPlacer colocadorPanel, MRNodeNavigator navegador,
                                SceneModelIndex index, MRMenuZonas menuZonas = null,
-                               MRColocacionAnclaje colocacionAnclaje = null)
+                               MRColocacionAnclaje colocacionAnclaje = null,
+                               bool identificarSenalado = false)
         {
             _rig = rig;
             _panel = panel;
@@ -102,7 +129,89 @@ namespace DigitalTwin.MR
             _colocacionAnclaje = colocacionAnclaje;
             _camara = Camera.main;
 
+            if (identificarSenalado) ConstruirEtiquetaSenalado();
+
             ConstruirCacheDeColliders();
+        }
+
+        /// <summary>
+        /// Rótulo flotante con el nombre del elemento señalado. Lienzo de mundo diminuto con el
+        /// material de interfaz siempre visible: sin él, la escritura de profundidad de los
+        /// oclusores invisibles lo recortaría contra el propio muro que está nombrando.
+        /// </summary>
+        private void ConstruirEtiquetaSenalado()
+        {
+            var canvas = DigitalTwin.UI.RuntimeUIFactory.CreateWorldCanvas("~EtiquetaSenaladoAR",
+                anchoPx: 560f, altoPx: 76f, anchoMetros: AnchoEtiquetaMetros);
+            _etiquetaRaiz = (RectTransform)canvas.transform;
+            _etiquetaRaiz.SetParent(transform, true);
+
+            var material = MRIndicadoresDestino.MaterialSiempreVisible();
+
+            var fondo = DigitalTwin.UI.RuntimeUIFactory.CreatePanel(_etiquetaRaiz, "Fondo",
+                new Color(0.05f, 0.06f, 0.08f, 0.82f));
+            DigitalTwin.UI.RuntimeUIFactory.StretchToParent((RectTransform)fondo.transform);
+            if (material != null) fondo.material = material;
+
+            _etiquetaTexto = DigitalTwin.UI.RuntimeUIFactory.CreateText(_etiquetaRaiz, "Nombre",
+                "", 34, TextAnchor.MiddleCenter, new Color(0.92f, 0.94f, 0.97f, 1f),
+                FontStyle.Bold);
+            DigitalTwin.UI.RuntimeUIFactory.StretchToParent((RectTransform)_etiquetaTexto.transform);
+            if (material != null) _etiquetaTexto.material = material;
+
+            _etiquetaEscalaBase = _etiquetaRaiz.localScale;
+            _etiquetaRaiz.gameObject.SetActive(false);
+
+            Debug.LogWarning("[DigitalTwin][AR] Etiqueta de senalado creada (solo modo anclado): " +
+                             "nombre del elemento junto al impacto del rayo, sin necesidad de " +
+                             "disparar.");
+        }
+
+        private void OcultarEtiquetaSenalado()
+        {
+            if (_etiquetaRaiz == null) return;
+            if (_etiquetaRaiz.gameObject.activeSelf) _etiquetaRaiz.gameObject.SetActive(false);
+            _metaEtiquetado = null;
+        }
+
+        /// <summary>
+        /// Coloca el rótulo junto al punto de impacto, un paso hacia el usuario y otro hacia
+        /// arriba para no clavarse en la superficie, encarado a la cámara y escalado con la
+        /// distancia para conservar su tamaño angular. El texto solo se reasigna al cambiar de
+        /// elemento: reescribir un Text fuerza su remaquetado.
+        /// </summary>
+        private void ActualizarEtiquetaSenalado(IfcMetadata meta, Ray rayo, float distancia)
+        {
+            if (_etiquetaRaiz == null) return;
+            if (meta == null) { OcultarEtiquetaSenalado(); return; }
+
+            if (!_etiquetaRaiz.gameObject.activeSelf) _etiquetaRaiz.gameObject.SetActive(true);
+            if (meta != _metaEtiquetado)
+            {
+                _metaEtiquetado = meta;
+                string nombre = string.IsNullOrEmpty(meta.ifcName) ? meta.ifcType : meta.ifcName;
+                _etiquetaTexto.text = Recortar(nombre, MaximoCaracteresEtiqueta);
+            }
+
+            Vector3 impacto = rayo.origin + rayo.direction * distancia;
+            Vector3 posicion = impacto - rayo.direction * 0.10f + Vector3.up * 0.06f;
+            _etiquetaRaiz.position = posicion;
+
+            if (_camara != null)
+            {
+                Vector3 mirada = posicion - _camara.transform.position;
+                if (mirada.sqrMagnitude > 1e-6f)
+                    _etiquetaRaiz.rotation = Quaternion.LookRotation(mirada, Vector3.up);
+            }
+
+            float factor = Mathf.Clamp(distancia, DistanciaMinimaEscala, DistanciaMaximaEscala);
+            _etiquetaRaiz.localScale = _etiquetaEscalaBase * factor;
+        }
+
+        private static string Recortar(string s, int maximo)
+        {
+            if (string.IsNullOrEmpty(s) || s.Length <= maximo) return s;
+            return s.Substring(0, maximo - 1) + "…";
         }
 
         /// <summary>
@@ -151,10 +260,20 @@ namespace DigitalTwin.MR
 
             // Con el panel de colocacion del anclaje abierto (modo anclado), el rayo es suyo:
             // toma puntos de suelo y acciona sus botones; una pulsacion no debe ademas
-            // seleccionar lo que haya detras.
-            if (_colocacionAnclaje != null && _colocacionAnclaje.CapturaElRayo) return;
+            // seleccionar lo que haya detras. La etiqueta de senalado se retira: el panel de
+            // colocacion ya lleva su propia guia (anillo de suelo y distancia).
+            if (_colocacionAnclaje != null && _colocacionAnclaje.CapturaElRayo)
+            {
+                OcultarEtiquetaSenalado();
+                return;
+            }
 
-            if (!_rig.TryGetRayo(out Ray rayo)) { _rig.MostrarImpacto(0f, false); return; }
+            if (!_rig.TryGetRayo(out Ray rayo))
+            {
+                _rig.MostrarImpacto(0f, false);
+                OcultarEtiquetaSenalado();
+                return;
+            }
 
             // 1) La interfaz se consulta ANTES que el mundo. El panel flota ante el usuario,
             // entre él y el edificio, así que en cuanto está abierto se interpone en casi
@@ -162,6 +281,8 @@ namespace DigitalTwin.MR
             if (_colocadorPanel != null && _colocadorPanel.RayoImpactaPanel(rayo, out float distPanel))
             {
                 _rig.MostrarImpacto(distPanel, true);
+                // Sobre la ficha no hay ambiguedad que resolver: la etiqueta se retira.
+                OcultarEtiquetaSenalado();
 
                 // Desplazamiento de la lista con el joystick mientras se señala la ficha.
                 float palanca = _rig.JoystickVertical();
@@ -242,6 +363,10 @@ namespace DigitalTwin.MR
 
             bool haySenal = primero != null || nodoDestino >= 0 || destinoSinGrafo != null;
             _rig.MostrarImpacto(distanciaPrimero, haySenal);
+
+            // «Qué estoy señalando», sin pulsar nada: el nombre del primer elemento en la línea
+            // de tiro, junto al impacto. Solo existe en modo anclado (null en navegación).
+            ActualizarEtiquetaSenalado(primero, rayo, distanciaPrimero);
 
             if (!_rig.GatilloPulsadoEsteFrame()) return;
 
