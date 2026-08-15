@@ -59,6 +59,15 @@ namespace DigitalTwin.MR
         /// </summary>
         private const float UmbralGatillo = 0.6f;
 
+        /// <summary>Texto de la leyenda de cada mando. Nace con los controles del modo de
+        /// navegación (el rig se crea en la etapa A, antes de conocer el modo); el bootstrap
+        /// lo sustituye con <see cref="FijarLeyenda"/> cuando el modo elegido cambia el papel de
+        /// algún botón (en anclado, A/X abre el panel de anclaje y no un menú de zonas).</summary>
+        private const string LeyendaPorDefecto =
+            "Gatillo · seleccionar / viajar\n" +
+            "A o X · menu de zonas\n" +
+            "Joystick · desplazar la ficha";
+
         private class Mano
         {
             public XRNode Nodo;
@@ -66,6 +75,7 @@ namespace DigitalTwin.MR
             public LineRenderer Linea;
             public GameObject Modelo;
             public GameObject Leyenda;
+            public UnityEngine.UI.Text TextoLeyenda;
             public bool Valida;
             public bool GatilloAnterior;
             public bool GatilloPulsadoEsteFrame;
@@ -127,8 +137,17 @@ namespace DigitalTwin.MR
 
             var mano = new Mano { Nodo = nodo, Anclaje = go.transform, Linea = linea };
             mano.Modelo = CrearModeloDeMando(go.transform, nodo == XRNode.LeftHand);
-            mano.Leyenda = CrearLeyendaDeMando(go.transform);
+            mano.Leyenda = CrearLeyendaDeMando(go.transform, out mano.TextoLeyenda);
             return mano;
+        }
+
+        /// <summary>Sustituye el texto de la leyenda de ambos mandos (ver <see cref="LeyendaPorDefecto"/>).
+        /// No cambia nada más del rig: la navegación por nodos no lo llama.</summary>
+        public void FijarLeyenda(string texto)
+        {
+            foreach (var mano in _manos)
+                if (mano.TextoLeyenda != null) mano.TextoLeyenda.text = texto;
+            Debug.LogWarning("[DigitalTwin][AR] Leyenda de los mandos actualizada para el modo elegido.");
         }
 
         /// <summary>
@@ -198,7 +217,7 @@ namespace DigitalTwin.MR
         /// natural de sujeción. Existe aunque el modelo no cargue: enseña los botones incluso
         /// sin referencia visual de dónde están.
         /// </summary>
-        private static GameObject CrearLeyendaDeMando(Transform anclaje)
+        private static GameObject CrearLeyendaDeMando(Transform anclaje, out UnityEngine.UI.Text textoLeyenda)
         {
             var canvas = DigitalTwin.UI.RuntimeUIFactory.CreateWorldCanvas(
                 "~LeyendaMando", anchoPx: 360f, altoPx: 150f, anchoMetros: 0.12f);
@@ -214,16 +233,14 @@ namespace DigitalTwin.MR
             DigitalTwin.UI.RuntimeUIFactory.StretchToParent((RectTransform)fondo.transform);
             if (material != null) fondo.material = material;
 
-            var texto = DigitalTwin.UI.RuntimeUIFactory.CreateText(raiz, "Texto",
-                "Gatillo · seleccionar / viajar\n" +
-                "A o X · menu de zonas\n" +
-                "Joystick · desplazar la ficha",
+            var texto = DigitalTwin.UI.RuntimeUIFactory.CreateText(raiz, "Texto", LeyendaPorDefecto,
                 20, TextAnchor.MiddleLeft, new Color(0.92f, 0.94f, 0.97f, 1f));
             var rtTexto = (RectTransform)texto.transform;
             DigitalTwin.UI.RuntimeUIFactory.StretchToParent(rtTexto);
             rtTexto.offsetMin = new Vector2(14f, 6f);
             rtTexto.offsetMax = new Vector2(-10f, -6f);
             if (material != null) texto.material = material;
+            textoLeyenda = texto;
 
             raiz.gameObject.SetActive(false); // se enciende con la mano valida, en Update
             return raiz.gameObject;

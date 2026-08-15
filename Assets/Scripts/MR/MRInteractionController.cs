@@ -66,6 +66,11 @@ namespace DigitalTwin.MR
         /// selector de modo) y una pulsación sobre él no debe seleccionar lo de detrás.</summary>
         private MRMenuZonas _menuZonas;
 
+        /// <summary>Interfaz de colocación del anclaje; null en navegación por nodos. Mientras
+        /// su panel está abierto captura el rayo (toma puntos de suelo y acciona sus botones),
+        /// con el mismo contrato de cesión que el menú de zonas.</summary>
+        private MRColocacionAnclaje _colocacionAnclaje;
+
         private Camera _camara;
 
         /// <summary>Resolución collider→metadatos calculada una vez. Los colliders creados
@@ -86,13 +91,15 @@ namespace DigitalTwin.MR
 
         public void Initialize(MRControllerRig rig, MetadataPanelController panel,
                                WorldPanelPlacer colocadorPanel, MRNodeNavigator navegador,
-                               SceneModelIndex index, MRMenuZonas menuZonas = null)
+                               SceneModelIndex index, MRMenuZonas menuZonas = null,
+                               MRColocacionAnclaje colocacionAnclaje = null)
         {
             _rig = rig;
             _panel = panel;
             _colocadorPanel = colocadorPanel;
             _navegador = navegador;
             _menuZonas = menuZonas;
+            _colocacionAnclaje = colocacionAnclaje;
             _camara = Camera.main;
 
             ConstruirCacheDeColliders();
@@ -141,6 +148,11 @@ namespace DigitalTwin.MR
             // Con el menu de zonas abierto, el rayo es suyo (el gestiona su propia seleccion y
             // el marcador de impacto): pulsar sobre el menu no debe seleccionar lo de detras.
             if (_menuZonas != null && _menuZonas.Abierto) return;
+
+            // Con el panel de colocacion del anclaje abierto (modo anclado), el rayo es suyo:
+            // toma puntos de suelo y acciona sus botones; una pulsacion no debe ademas
+            // seleccionar lo que haya detras.
+            if (_colocacionAnclaje != null && _colocacionAnclaje.CapturaElRayo) return;
 
             if (!_rig.TryGetRayo(out Ray rayo)) { _rig.MostrarImpacto(0f, false); return; }
 

@@ -283,6 +283,13 @@ namespace DigitalTwin.MR
             // edificio entero bajo los pies del usuario a mitad de recorrido, que es exactamente
             // lo contrario de lo que ese modo promete (el modelo quieto y el usuario saltando
             // entre nodos).
+            //
+            // Tres piezas, en este orden: el servicio (habla con el runtime), el binder (mueve
+            // el modelo; se suscribe ANTES de que el servicio arranque, así la restauración de
+            // un anclaje guardado no encuentra a nadie escuchando) y la interfaz de colocación
+            // (desde el 15-08 por la tarde: el registro por pares de puntos que por fin decide la pose y
+            // llama a ColocarEnPose / OlvidarAnclaje, que hasta entonces no tenían llamante).
+            MRColocacionAnclaje colocacion = null;
             if (modo == ModoAR.Anclado)
             {
                 var anclajeGo = new GameObject("~MRAnchorService");
@@ -290,10 +297,29 @@ namespace DigitalTwin.MR
                 var anclaje = anclajeGo.AddComponent<MRAnchorService>();
 
                 var binder = anclajeGo.AddComponent<ModelAnchorBinder>();
-                binder.Initialize(index, anclaje);
+                binder.Initialize(index, anclaje, origenXR);
 
                 anclaje.OnEstadoCambiado += estado =>
                     Debug.LogWarning($"[DigitalTwin][MR] Estado del anclaje: {estado}.");
+
+                if (rig != null && binder.RaizModelo != null)
+                {
+                    var colocacionGo = new GameObject("~ColocacionAnclajeAR");
+                    Object.DontDestroyOnLoad(colocacionGo);
+                    colocacion = colocacionGo.AddComponent<MRColocacionAnclaje>();
+                    colocacion.Initialize(rig, Camera.main, index, anclaje, binder, origenXR);
+
+                    // La leyenda del mando nace en la etapa A con los controles de navegación;
+                    // aquí A/X abre el panel de anclaje y el gatillo también toma puntos.
+                    rig.FijarLeyenda("Gatillo · seleccionar / tomar punto\n" +
+                                     "A o X · panel de anclaje\n" +
+                                     "Joystick · desplazar la ficha");
+                }
+                else
+                {
+                    Debug.LogError("[DigitalTwin][AR] Sin rig de mandos o sin raiz de modelo no se crea la " +
+                                   "interfaz de colocacion: el anclaje solo podra restaurarse, nunca crearse.");
+                }
             }
             else
             {
@@ -452,7 +478,7 @@ namespace DigitalTwin.MR
                 var interaccionGo = new GameObject("~InteraccionAR");
                 interaccionGo.transform.SetParent(desplazamientoCamara, false);
                 var interaccion = interaccionGo.AddComponent<MRInteractionController>();
-                interaccion.Initialize(rig, panel, colocador, navegador, index, menuZonas);
+                interaccion.Initialize(rig, panel, colocador, navegador, index, menuZonas, colocacion);
             }
             else
             {
