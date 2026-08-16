@@ -16,275 +16,275 @@ MonoBehaviour:
   - GlobalId: 033vbOvQP8AR_wKTL$tA5V
     Nombre: Puerta atamborada simple abatible:0864 x 2032mm Acri:194676
     Sala: 
-    Posicion: {x: 49.52562, y: 1.054, z: -50.004898}
+    Posicion: {x: 49.52562, y: 1.4, z: -50.004898}
     Vecinos: 070000000a00000027000000
   - GlobalId: 033vbOvQP8AR_wKTL$tA6V
     Nombre: Puerta atamborada simple abatible:0864 x 2032mm Acri:194740
     Sala: 
-    Posicion: {x: 51.16562, y: 1.054, z: -50.004898}
+    Posicion: {x: 51.16562, y: 1.4, z: -50.004898}
     Vecinos: 0700000026000000
   - GlobalId: 033vbOvQP8AR_wKTL$tA7R
     Nombre: Puerta atamborada simple abatible:0864 x 2032mm Acri:194800
     Sala: 
-    Posicion: {x: 47.635616, y: 1.054, z: -43.604897}
+    Posicion: {x: 47.635616, y: 1.4, z: -43.604897}
     Vecinos: 0e00000010000000
   - GlobalId: 033vbOvQP8AR_wKTL$tM0r
     Nombre: Puerta atamborada simple abatible:0864 x 2032mm Acri:211230
     Sala: 
-    Posicion: {x: 34.979694, y: 1.054, z: -55.60625}
+    Posicion: {x: 34.979694, y: 1.4, z: -55.60625}
     Vecinos: 05000000160000001a000000
   - GlobalId: 033vbOvQP8AR_wKTL$tM1h
     Nombre: Puerta atamborada simple abatible:0864 x 2032mm Acri:211264
     Sala: 
-    Posicion: {x: 32.099693, y: 1.054, z: -52.34754}
+    Posicion: {x: 32.099693, y: 1.4, z: -52.34754}
     Vecinos: 0500000015000000
   - GlobalId: 033vbOvQP8AR_wKTL$tMF6
     Nombre: Puerta atamborada simple abatible:0864 x 2032mm Acri:211693
     Sala: 
-    Posicion: {x: 37.35504, y: 1.054, z: -52.34754}
+    Posicion: {x: 37.35504, y: 1.4, z: -52.34754}
     Vecinos: 03000000040000000b000000
   - GlobalId: 033vbOvQP8AR_wKTL$tMMd
     Nombre: Puerta atamborada simple abatible:0864 x 2032mm Acri:212108
     Sala: 
-    Posicion: {x: 28.47969, y: 1.054, z: -64.402336}
+    Posicion: {x: 28.47969, y: 1.4, z: -64.402336}
     Vecinos: 190000001a000000
   - GlobalId: 0Pv8CPskj9CfRE25oS3iwE
     Nombre: Esfera_R24:Esfera_R24:261454
     Sala: Puestos
-    Posicion: {x: 49.322998, y: 1.5500001, z: -51.102177}
+    Posicion: {x: 49.322998, y: 1.4000001, z: -51.102177}
     Vecinos: 00000000010000002100000024000000
   - GlobalId: 0rnbMfC4L9qhDOi7l3Af6E
     Nombre: Esfera_R24:Esfera_R24:256370
     Sala: "BA\xD1OS"
-    Posicion: {x: 35.891663, y: 1.5500001, z: -49.44907}
+    Posicion: {x: 35.891663, y: 1.4000001, z: -49.44907}
     Vecinos: 290000002e0000002f000000
   - GlobalId: 0rnbMfC4L9qhDOi7l3AfO3
     Nombre: Esfera_R24:Esfera_R24:257791
     Sala: "Almac\xE9n"
-    Posicion: {x: 44.566658, y: 1.5500001, z: -47.846207}
+    Posicion: {x: 44.566658, y: 1.4000001, z: -47.846207}
     Vecinos: 0a000000250000002700000028000000
   - GlobalId: 0rnbMfC4L9qhDOi7l3AfO4
     Nombre: Esfera_R24:Esfera_R24:257784
     Sala: "Almac\xE9n"
-    Posicion: {x: 46.96666, y: 1.5500001, z: -47.846207}
+    Posicion: {x: 46.96666, y: 1.4000001, z: -47.846207}
     Vecinos: 00000000090000000e000000
   - GlobalId: 0rnbMfC4L9qhDOi7l3AfOD
     Nombre: Esfera_R24:Esfera_R24:257777
     Sala: Hall
-    Posicion: {x: 39.310772, y: 1.5500001, z: -51.831207}
+    Posicion: {x: 39.310772, y: 1.4000001, z: -51.831207}
     Vecinos: 050000000c0000001b00000031000000
   - GlobalId: 0rnbMfC4L9qhDOi7l3AfOM
     Nombre: Esfera_R24:Esfera_R24:257770
     Sala: Hall
-    Posicion: {x: 39.310772, y: 1.5500001, z: -47.216087}
+    Posicion: {x: 39.310772, y: 1.4000001, z: -47.216087}
     Vecinos: 0b00000011000000290000002c00000035000000
   - GlobalId: 0rnbMfC4L9qhDOi7l3AfOV
     Nombre: Esfera_R24:Esfera_R24:257763
     Sala: Cocina
-    Posicion: {x: 44.520164, y: 1.5500001, z: -44.446205}
+    Posicion: {x: 44.520164, y: 1.4000001, z: -44.446205}
     Vecinos: 0e0000002800000034000000
   - GlobalId: 0rnbMfC4L9qhDOi7l3AfOc
     Nombre: Esfera_R24:Esfera_R24:257754
     Sala: Camerino
-    Posicion: {x: 47.976982, y: 1.5500001, z: -45.180977}
+    Posicion: {x: 47.976982, y: 1.4000001, z: -45.180977}
     Vecinos: 020000000a0000000d000000
   - GlobalId: 0rnbMfC4L9qhDOi7l3AfOl
     Nombre: Esfera_R24:Esfera_R24:257747
     Sala: Sala Multiuso
-    Posicion: {x: 42.316658, y: 1.5500001, z: -40.260532}
+    Posicion: {x: 42.316658, y: 1.4000001, z: -40.260532}
     Vecinos: 1000000034000000
   - GlobalId: 0rnbMfC4L9qhDOi7l3AfOm
     Nombre: Esfera_R24:Esfera_R24:257740
     Sala: Sala Multiuso
-    Posicion: {x: 46.96666, y: 1.5500001, z: -40.260532}
+    Posicion: {x: 46.96666, y: 1.4000001, z: -40.260532}
     Vecinos: 020000000f000000
   - GlobalId: 0rnbMfC4L9qhDOi7l3AfOv
     Nombre: Esfera_R24:Esfera_R24:257733
     Sala: Comedor
-    Posicion: {x: 37.906082, y: 1.5500001, z: -43.73856}
+    Posicion: {x: 37.906082, y: 1.4000001, z: -43.73856}
     Vecinos: 0c00000012000000
   - GlobalId: 0rnbMfC4L9qhDOi7l3AfP2
     Nombre: Esfera_R24:Esfera_R24:257726
     Sala: Comedor
-    Posicion: {x: 37.906082, y: 1.5500001, z: -41.13732}
+    Posicion: {x: 37.906082, y: 1.4000001, z: -41.13732}
     Vecinos: 1100000013000000
   - GlobalId: 0rnbMfC4L9qhDOi7l3AfPB
     Nombre: Esfera_R24:Esfera_R24:257719
     Sala: Recibidor
-    Posicion: {x: 38.846085, y: 1.5500001, z: -38.407364}
+    Posicion: {x: 38.846085, y: 1.4000001, z: -38.407364}
     Vecinos: 12000000
   - GlobalId: 0rnbMfC4L9qhDOi7l3AfPG
     Nombre: Esfera_R24:Esfera_R24:257708
     Sala: "BA\xD1OS"
-    Posicion: {x: 34.238102, y: 1.5500001, z: -48.75706}
+    Posicion: {x: 34.238102, y: 1.4000001, z: -48.75706}
     Vecinos: 150000002f000000
   - GlobalId: 0rnbMfC4L9qhDOi7l3AfPV
     Nombre: Esfera_R24:Esfera_R24:257699
     Sala: "BA\xD1OS"
-    Posicion: {x: 34.566612, y: 1.5500001, z: -50.831207}
+    Posicion: {x: 34.566612, y: 1.4000001, z: -50.831207}
     Vecinos: 04000000140000002d000000
   - GlobalId: 0rnbMfC4L9qhDOi7l3AfPW
     Nombre: Esfera_R24:Esfera_R24:257692
     Sala: "BA\xD1OS"
-    Posicion: {x: 35.793053, y: 1.5500001, z: -51.031204}
+    Posicion: {x: 35.793053, y: 1.4000001, z: -51.031204}
     Vecinos: 030000002e000000
   - GlobalId: 0rnbMfC4L9qhDOi7l3AfPl
     Nombre: Esfera_R24:Esfera_R24:257683
     Sala: Cuarto Limpieza
-    Posicion: {x: 36.628235, y: 1.5500001, z: -50.834362}
+    Posicion: {x: 36.628235, y: 1.4000001, z: -50.834362}
     Vecinos: 30000000
   - GlobalId: 0rnbMfC4L9qhDOi7l3AfU6
     Nombre: Esfera_R24:Esfera_R24:257914
     Sala: Sala Reuniones
-    Posicion: {x: 38.996082, y: 1.5500001, z: -55.139915}
+    Posicion: {x: 38.996082, y: 1.4000001, z: -55.139915}
     Vecinos: 1900000031000000
   - GlobalId: 0rnbMfC4L9qhDOi7l3AfUF
     Nombre: Esfera_R24:Esfera_R24:257907
     Sala: Sala Reuniones
-    Posicion: {x: 42.806084, y: 1.5500001, z: -55.92957}
+    Posicion: {x: 42.806084, y: 1.4000001, z: -55.92957}
     Vecinos: 06000000180000002a000000
   - GlobalId: 0rnbMfC4L9qhDOi7l3AfUG
     Nombre: Esfera_R24:Esfera_R24:257900
     Sala: Puestos
-    Posicion: {x: 44.996082, y: 1.5500001, z: -61.634712}
+    Posicion: {x: 44.996082, y: 1.4000001, z: -61.634712}
     Vecinos: 03000000060000001b0000001e000000
   - GlobalId: 0rnbMfC4L9qhDOi7l3AfUP
     Nombre: Esfera_R24:Esfera_R24:257893
     Sala: Puestos
-    Posicion: {x: 44.996082, y: 1.5500001, z: -57.634712}
+    Posicion: {x: 44.996082, y: 1.4000001, z: -57.634712}
     Vecinos: 0b0000001a0000001c0000002a000000
   - GlobalId: 0rnbMfC4L9qhDOi7l3AfUY
     Nombre: Esfera_R24:Esfera_R24:257886
     Sala: Puestos
-    Posicion: {x: 46.96445, y: 1.5500001, z: -57.634712}
+    Posicion: {x: 46.96445, y: 1.4000001, z: -57.634712}
     Vecinos: 1b0000001e0000001f0000002b000000
   - GlobalId: 0rnbMfC4L9qhDOi7l3AfUh
     Nombre: Esfera_R24:Esfera_R24:257879
     Sala: Puestos
-    Posicion: {x: 53.39398, y: 1.5500001, z: -59.84858}
+    Posicion: {x: 53.39398, y: 1.4000001, z: -59.84858}
     Vecinos: 1e00000020000000
   - GlobalId: 0rnbMfC4L9qhDOi7l3AfUo
     Nombre: Esfera_R24:Esfera_R24:257870
     Sala: Puestos
-    Posicion: {x: 48.99666, y: 1.5500001, z: -60.002136}
+    Posicion: {x: 48.99666, y: 1.4000001, z: -60.002136}
     Vecinos: 1a0000001c0000001d000000
   - GlobalId: 0rnbMfC4L9qhDOi7l3AfUx
     Nombre: Esfera_R24:Esfera_R24:257863
     Sala: Puestos
-    Posicion: {x: 48.99666, y: 1.5500001, z: -56.85097}
+    Posicion: {x: 48.99666, y: 1.4000001, z: -56.85097}
     Vecinos: 1c0000002000000022000000
   - GlobalId: 0rnbMfC4L9qhDOi7l3AfUy
     Nombre: Esfera_R24:Esfera_R24:257856
     Sala: Puestos
-    Posicion: {x: 53.637627, y: 1.5500001, z: -56.85097}
+    Posicion: {x: 53.637627, y: 1.4000001, z: -56.85097}
     Vecinos: 1d0000001f00000023000000
   - GlobalId: 0rnbMfC4L9qhDOi7l3AfV5
     Nombre: Esfera_R24:Esfera_R24:257849
     Sala: Puestos
-    Posicion: {x: 48.125042, y: 1.5500001, z: -52.004898}
+    Posicion: {x: 48.125042, y: 1.4000001, z: -52.004898}
     Vecinos: 070000002200000033000000
   - GlobalId: 0rnbMfC4L9qhDOi7l3AfVE
     Nombre: Esfera_R24:Esfera_R24:257842
     Sala: Puestos
-    Posicion: {x: 49.18666, y: 1.5500001, z: -53.836975}
+    Posicion: {x: 49.18666, y: 1.4000001, z: -53.836975}
     Vecinos: 1f00000021000000230000002b000000
   - GlobalId: 0rnbMfC4L9qhDOi7l3AfVH
     Nombre: Esfera_R24:Esfera_R24:257837
     Sala: Puestos
-    Posicion: {x: 53.517265, y: 1.5500001, z: -53.836975}
+    Posicion: {x: 53.517265, y: 1.4000001, z: -53.836975}
     Vecinos: 200000002200000024000000
   - GlobalId: 0rnbMfC4L9qhDOi7l3AfVQ
     Nombre: Esfera_R24:Esfera_R24:257830
     Sala: Puestos
-    Posicion: {x: 53.517265, y: 1.5500001, z: -50.909157}
+    Posicion: {x: 53.517265, y: 1.4000001, z: -50.909157}
     Vecinos: 0700000023000000
   - GlobalId: 0rnbMfC4L9qhDOi7l3AfVX
     Nombre: Esfera_R24:Esfera_R24:257821
     Sala: Puestos
-    Posicion: {x: 44.965042, y: 1.5500001, z: -51.917305}
+    Posicion: {x: 44.965042, y: 1.4000001, z: -51.917305}
     Vecinos: 090000003300000035000000
   - GlobalId: 0rnbMfC4L9qhDOi7l3AfVg
     Nombre: Esfera_R24:Esfera_R24:257814
     Sala: Sala
-    Posicion: {x: 51.39166, y: 1.5500001, z: -49.486427}
+    Posicion: {x: 51.39166, y: 1.4000001, z: -49.486427}
     Vecinos: 01000000
   - GlobalId: 0rnbMfC4L9qhDOi7l3AfVn
     Nombre: Esfera_R24:Esfera_R24:257805
     Sala: Sala
-    Posicion: {x: 49.62122, y: 1.5500001, z: -49.641323}
+    Posicion: {x: 49.62122, y: 1.4000001, z: -49.641323}
     Vecinos: 0000000009000000
   - GlobalId: 0rnbMfC4L9qhDOi7l3AfVw
     Nombre: Esfera_R24:Esfera_R24:257798
     Sala: "Almac\xE9n"
-    Posicion: {x: 42.806084, y: 1.5500001, z: -47.025238}
+    Posicion: {x: 42.806084, y: 1.4000001, z: -47.025238}
     Vecinos: 090000000d0000002c000000
   - GlobalId: 2ZEOGmsXPBQOTOFBVff7X7
     Nombre: Puerta atamborada simple abatible:0864 x 2032mm:244943
     Sala: 
-    Posicion: {x: 37.02969, y: 1.054, z: -49.462543}
+    Posicion: {x: 37.02969, y: 1.4, z: -49.462543}
     Vecinos: 080000000c00000030000000
   - GlobalId: 2o_Wt5ZAP07PmvnWR3EDyC
     Nombre: Esfera_R24:Esfera_R24:260777
     Sala: Despacho
-    Posicion: {x: 44.134422, y: 1.5500001, z: -54.454296}
+    Posicion: {x: 44.134422, y: 1.4000001, z: -54.454296}
     Vecinos: 190000001b0000002b00000035000000
   - GlobalId: 2o_Wt5ZAP07PmvnWR3EDyL
     Nombre: Esfera_R24:Esfera_R24:260784
     Sala: Despacho
-    Posicion: {x: 46.334423, y: 1.5500001, z: -54.454296}
+    Posicion: {x: 46.334423, y: 1.4000001, z: -54.454296}
     Vecinos: 1c000000220000002a00000033000000
   - GlobalId: 3JJ$Nbc159iP3a2b896H7c
     Nombre: Puerta de 1 hoja:90 x 210 cm:176902
     Sala: 
-    Posicion: {x: 42.265617, y: 1.0875, z: -46.7449}
+    Posicion: {x: 42.265617, y: 1.4, z: -46.7449}
     Vecinos: 0c0000002800000034000000
   - GlobalId: 3JJ$Nbc159iP3a2b896KqK
     Nombre: Puerta atamborada simple abatible:0864 x 2032mm:192500
     Sala: 
-    Posicion: {x: 35.169693, y: 1.054, z: -49.657543}
+    Posicion: {x: 35.169693, y: 1.4, z: -49.657543}
     Vecinos: 150000002e000000
   - GlobalId: 3JJ$Nbc159iP3a2b896L2J
     Nombre: Puerta atamborada simple abatible:0762 x 2032mm:193139
     Sala: 
-    Posicion: {x: 35.642193, y: 1.054, z: -50.137543}
+    Posicion: {x: 35.642193, y: 1.4, z: -50.137543}
     Vecinos: 08000000160000002d000000
   - GlobalId: 3JJ$Nbc159iP3a2b896L6y
     Nombre: Puerta atamborada simple abatible:0762 x 2032mm:193372
     Sala: 
-    Posicion: {x: 35.169693, y: 1.054, z: -48.767544}
+    Posicion: {x: 35.169693, y: 1.4, z: -48.767544}
     Vecinos: 0800000014000000
   - GlobalId: 3JJ$Nbc159iP3a2b896L7M
     Nombre: Puerta atamborada simple abatible:0762 x 2032mm:193334
     Sala: 
-    Posicion: {x: 36.54719, y: 1.054, z: -50.137543}
+    Posicion: {x: 36.54719, y: 1.4, z: -50.137543}
     Vecinos: 1700000029000000
   - GlobalId: 3JJ$Nbc159iP3a2b896LJm
     Nombre: Puerta atamborada simple abatible:0864 x 2332mm Acri:194064
     Sala: 
-    Posicion: {x: 39.455044, y: 1.075, z: -53.48731}
+    Posicion: {x: 39.455044, y: 1.4, z: -53.48731}
     Vecinos: 0b0000001800000032000000
   - GlobalId: 3JJ$Nbc159iP3a2b896LKu
     Nombre: Puerta atamborada simple abatible:0864 x 2032mm Acri:194520
     Sala: 
-    Posicion: {x: 43.005615, y: 1.054, z: -52.637306}
+    Posicion: {x: 43.005615, y: 1.4, z: -52.637306}
     Vecinos: 3100000035000000
   - GlobalId: 3JJ$Nbc159iP3a2b896LQq
     Nombre: Puerta atamborada simple abatible:0864 x 2332mm Acri:193620
     Sala: 
-    Posicion: {x: 46.507042, y: 1.075, z: -53.507305}
+    Posicion: {x: 46.507042, y: 1.4, z: -53.507305}
     Vecinos: 21000000250000002b000000
   - GlobalId: 3JJ$Nbc159iP3a2b896LR8
     Nombre: Puerta atamborada simple abatible:0864 x 2032mm Acri:193576
     Sala: 
-    Posicion: {x: 41.485615, y: 1.054, z: -43.6049}
+    Posicion: {x: 41.485615, y: 1.4, z: -43.6049}
     Vecinos: 0d0000000f0000002c000000
   - GlobalId: 3JJ$Nbc159iP3a2b896LVM
     Nombre: Puerta atamborada simple abatible:0864 x 2332mm Acri:193846
     Sala: 
-    Posicion: {x: 44.287045, y: 1.075, z: -53.507305}
+    Posicion: {x: 44.287045, y: 1.4, z: -53.507305}
     Vecinos: 0c000000250000002a00000032000000
-  GeneradoEl: 2026-08-14 12:57
-  EscenaOrigen: MainScene
+  GeneradoEl: 2026-08-15 13:20
+  EscenaOrigen: ARScene
   Parametros: "RNG sobre coste; tolerancia vertical 2,5 m; longitud m\xE1xima 25
     m; penalizaciones: paso 2 m, vidrio 8 m, fabrica 30 m, otros 10 m; puertas como
     nodos: True"
