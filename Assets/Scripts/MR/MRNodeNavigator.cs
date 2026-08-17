@@ -57,7 +57,7 @@ namespace DigitalTwin.MR
         /// <summary>Por encima de esta distancia el desplazamiento se resuelve con un salto
         /// instantáneo, el mismo criterio (y el mismo valor) que el escritorio
         /// (TourNavigationManager.DistanciaSaltoInstantaneo): atravesar medio edificio a
-        /// velocidad constante desorienta más que un corte limpio. Hasta el menú de zonas era
+        /// velocidad constante desorienta más que un corte limpio. Hasta el menú era
         /// teórico —los vecinos del grafo quedan siempre cerca—; con él es el caso normal.</summary>
         private const float DistanciaSaltoInstantaneo = 12f;
 
@@ -297,7 +297,7 @@ namespace DigitalTwin.MR
         }
 
         /// <summary>Sala del nodo actual (LOC_Localizacion4), o cadena vacía. La consume el
-        /// menú de zonas para resaltar dónde está el usuario, igual que en escritorio.</summary>
+        /// menú del visor para resaltar dónde está el usuario, igual que en escritorio.</summary>
         public string SalaActual
         {
             get
@@ -322,7 +322,7 @@ namespace DigitalTwin.MR
             if (EnTransito || destino == null) return false;
             if (!Disponible)
             {
-                Debug.LogWarning("[DigitalTwin][AR] Menu de zonas: sin grafo no hay nodo actual " +
+                Debug.LogWarning("[DigitalTwin][AR] Menu: sin grafo no hay nodo actual " +
                                  "que actualizar; se viaja directo al punto.");
                 return ViajarDirectoSinGrafo(destino);
             }
@@ -332,19 +332,19 @@ namespace DigitalTwin.MR
             {
                 // El representante de una sala es siempre una esfera y las 36 son nodos del
                 // grafo; si esto salta, el grafo se generó contra otro modelo.
-                Debug.LogWarning($"[DigitalTwin][AR] Menu de zonas: el punto representativo de " +
+                Debug.LogWarning($"[DigitalTwin][AR] Menu: el punto representativo de " +
                                  $"'{sala}' no es un nodo del grafo; se viaja igualmente, pero " +
                                  "el nodo actual no se actualizara. Regenera el grafo.");
                 return ViajarDirectoSinGrafo(destino);
             }
             if (indice == _indiceNodoActual)
             {
-                Debug.LogWarning($"[DigitalTwin][AR] Menu de zonas: ya se esta en el punto " +
+                Debug.LogWarning($"[DigitalTwin][AR] Menu: ya se esta en el punto " +
                                  $"representativo de '{sala}'; no hay viaje.");
                 return false;
             }
 
-            Debug.LogWarning($"[DigitalTwin][AR] Menu de zonas: viaje de acceso directo a " +
+            Debug.LogWarning($"[DigitalTwin][AR] Menu: viaje de acceso directo a " +
                              $"'{sala}' ('{Etiqueta(indice)}'), fuera del grafo a proposito " +
                              "(mismo contrato que el menu de escritorio).");
             StartCoroutine(Desplazamiento(PosicionDeNodo(indice), indice, Etiqueta(indice)));

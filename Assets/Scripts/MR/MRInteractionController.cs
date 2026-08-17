@@ -75,14 +75,19 @@ namespace DigitalTwin.MR
         /// <summary>Navegación por nodos; null en modo anclado.</summary>
         private MRNodeNavigator _navegador;
 
-        /// <summary>Menú de zonas; null en modo anclado. Mientras está abierto, este
-        /// controlador cede el rayo: el menú gestiona su propia interacción (patrón del
-        /// selector de modo) y una pulsación sobre él no debe seleccionar lo de detrás.</summary>
+        /// <summary>Menú del modo de navegación (zonas, solar, volver al selector); null en
+        /// modo anclado. Mientras está abierto, este controlador cede el rayo: el menú gestiona
+        /// su propia interacción (patrón del selector de modo) y una pulsación sobre él no debe
+        /// seleccionar lo de detrás.</summary>
         private MRMenuZonas _menuZonas;
+
+        /// <summary>Menú del modo anclado (panel de anclaje, rehacer, volver al selector);
+        /// null en navegación. Mismo contrato de cesión del rayo que el de navegación.</summary>
+        private MRMenuAnclado _menuAnclado;
 
         /// <summary>Interfaz de colocación del anclaje; null en navegación por nodos. Mientras
         /// su panel está abierto captura el rayo (toma puntos de suelo y acciona sus botones),
-        /// con el mismo contrato de cesión que el menú de zonas.</summary>
+        /// con el mismo contrato de cesión que el menú.</summary>
         private MRColocacionAnclaje _colocacionAnclaje;
 
         private Camera _camara;
@@ -119,13 +124,15 @@ namespace DigitalTwin.MR
                                WorldPanelPlacer colocadorPanel, MRNodeNavigator navegador,
                                SceneModelIndex index, MRMenuZonas menuZonas = null,
                                MRColocacionAnclaje colocacionAnclaje = null,
-                               bool identificarSenalado = false)
+                               bool identificarSenalado = false,
+                               MRMenuAnclado menuAnclado = null)
         {
             _rig = rig;
             _panel = panel;
             _colocadorPanel = colocadorPanel;
             _navegador = navegador;
             _menuZonas = menuZonas;
+            _menuAnclado = menuAnclado;
             _colocacionAnclaje = colocacionAnclaje;
             _camara = Camera.main;
 
@@ -254,9 +261,15 @@ namespace DigitalTwin.MR
             // desplazamientos y dejaria al usuario en un sitio que no ha elegido.
             if (_navegador != null && _navegador.EnTransito) return;
 
-            // Con el menu de zonas abierto, el rayo es suyo (el gestiona su propia seleccion y
-            // el marcador de impacto): pulsar sobre el menu no debe seleccionar lo de detras.
+            // Con el menu abierto (el de navegacion o el de anclado), el rayo es suyo (el
+            // gestiona su propia seleccion y el marcador de impacto): pulsar sobre el menu no
+            // debe seleccionar lo de detras.
             if (_menuZonas != null && _menuZonas.Abierto) return;
+            if (_menuAnclado != null && _menuAnclado.Abierto)
+            {
+                OcultarEtiquetaSenalado();
+                return;
+            }
 
             // Con el panel de colocacion del anclaje abierto (modo anclado), el rayo es suyo:
             // toma puntos de suelo y acciona sus botones; una pulsacion no debe ademas

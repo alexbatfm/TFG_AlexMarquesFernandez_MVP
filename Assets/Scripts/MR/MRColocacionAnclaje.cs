@@ -59,7 +59,7 @@ namespace DigitalTwin.MR
     /// (aviso breve, con la opción de recolocar); si no lo hay, el panel de registro se abre
     /// solo con la primera estación. El panel se abre y cierra con el botón primario (A/X;
     /// tecla M en el Editor) en cualquier momento; mientras está abierto captura el rayo (el
-    /// controlador de interacción cede, como con el menú de zonas). Puede deshacerse el último
+    /// controlador de interacción cede, como con el menú). Puede deshacerse el último
     /// punto, saltarse una puerta inaccesible, terminar con los puntos que haya (con la calidad
     /// que haya, dicha), y recolocar desde cero. «Anclaje creado» y «guardado» se muestran por
     /// separado, porque persistir puede fallar por su cuenta y el sistema sigue siendo usable
@@ -190,6 +190,24 @@ namespace DigitalTwin.MR
         /// cede el rayo (mismo contrato que <see cref="MRMenuZonas.Abierto"/>).</summary>
         public bool CapturaElRayo => _raiz != null && _raiz.gameObject.activeSelf;
 
+        /// <summary>Fotograma en que este panel consumió el botón primario (para cerrarse).
+        /// El menú del modo anclado lo consulta para no abrirse con esa misma pulsación:
+        /// el orden de ejecución entre ambos componentes no está garantizado.</summary>
+        public int FotogramaBotonConsumido { get; private set; } = -1;
+
+        /// <summary>Reabre el panel desde el menú del modo anclado (desde la ronda 9 el botón
+        /// primario abre el menú, no este panel; el panel sigue abriéndose solo cuando el
+        /// registro lo exige).</summary>
+        public void AbrirPanel()
+        {
+            Abrir(); // Abrir ya refresca el contenido con la fase vigente
+            Debug.LogWarning("[DigitalTwin][MR] Panel de anclaje reabierto desde el menu.");
+        }
+
+        /// <summary>Rehacer el anclaje desde el menú: olvida el guardado y reinicia el registro
+        /// (misma acción que el botón «Recolocar desde cero» del propio panel).</summary>
+        public void RehacerAnclaje() => RecolocarDesdeCero();
+
         public void Initialize(MRControllerRig rig, Camera camara, SceneModelIndex index,
                                MRAnchorService anclaje, ModelAnchorBinder binder, Transform origenXR)
         {
@@ -212,7 +230,8 @@ namespace DigitalTwin.MR
             Debug.LogWarning($"[DigitalTwin][MR] Interfaz de colocacion lista: {_candidatas.Count} puertas " +
                              $"candidatas, plan de {_plan.Count} estaciones; minimo {PuntosMinimos}, " +
                              $"recomendado {PuntosRecomendados}. Suelo fisico (mundo) en y=" +
-                             $"{AlturaSueloFisico():0.000}. Se abre y cierra con A/X (M en el Editor).");
+                             $"{AlturaSueloFisico():0.000}. A/X (M en el Editor) la oculta; se " +
+                             "reabre desde el menu del modo anclado.");
         }
 
         // ==================================================================================
@@ -470,7 +489,7 @@ namespace DigitalTwin.MR
                 Abrir();
                 _ocultarAvisoEn = Time.time + SegundosAvisoBreve;
                 Debug.LogWarning("[DigitalTwin][MR] Anclaje restaurado sin preguntar; el aviso se retira solo. " +
-                                 "Recolocar: A/X > 'Recolocar desde cero'.");
+                                 "Recolocar: menu (A/X) > 'Rehacer el anclaje'.");
             }
             else
             {
@@ -675,9 +694,14 @@ namespace DigitalTwin.MR
         {
             if (_rig == null || _raiz == null) return;
 
-            if (_rig.BotonMenuPulsadoEsteFrame())
+            // Desde la ronda 9 el botón primario pertenece al menú del modo anclado (mismo
+            // gesto que en navegación). Este panel solo lo consume para OCULTARSE cuando está
+            // abierto; reabrirlo es una fila de ese menú. Se anota el fotograma para que el
+            // menú no interprete la misma pulsación como orden de abrirse.
+            if (_rig.BotonMenuPulsadoEsteFrame() && CapturaElRayo)
             {
-                if (CapturaElRayo) Cerrar(); else Abrir();
+                FotogramaBotonConsumido = Time.frameCount;
+                Cerrar();
             }
 
             if (!CapturaElRayo)
@@ -885,7 +909,7 @@ namespace DigitalTwin.MR
             y += AltoBotonPx + 10f;
 
             TextoEn(_raiz, "Pie",
-                "Gatillo: tomar el punto o pulsar un boton  ·  A o X: mostrar u ocultar este panel",
+                "Gatillo: tomar el punto o pulsar un boton  ·  A o X: ocultar (se reabre desde el menu)",
                 16, TextAnchor.MiddleLeft, TextoTenue, FontStyle.Normal,
                 xTexto, AltoPx - MargenPx - 28f, AnchoPx - 2 * MargenPx, 28f, material);
 

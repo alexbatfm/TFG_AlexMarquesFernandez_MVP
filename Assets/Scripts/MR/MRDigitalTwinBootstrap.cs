@@ -23,6 +23,9 @@ namespace DigitalTwin.MR
     /// según el modo elegido. No son dos ajustes del mismo programa sino dos programas (cambian
     /// entrada, fondo, papel de la geometría y colisionadores), por eso la elección es al
     /// arrancar y no un conmutador en caliente; ver docs/roadmap/DISENO-modo-anclado.md.
+    /// Desde la ronda 9 se puede VOLVER al selector sin reiniciar la aplicación, pero no
+    /// conmutando en caliente sino terminando el «programa» en curso y arrancando el otro por
+    /// el mismo camino: ver <see cref="VolverAlSelector"/>.
     ///
     /// SE DIFIERE DENTRO DE ARScene; NO HAY ESCENA NUEVA. Una escena de menú obligaría a ampliar
     /// el filtro por nombre de escena y a mantenerla en Build Settings, y ese filtro es
@@ -255,7 +258,7 @@ namespace DigitalTwin.MR
         ///
         /// DESDE EL 15-08 (noche) EL MODO ANCLADO NO SE MONTA AQUÍ: se delega en
         /// <see cref="MRArranqueAnclado"/>, que espera a que el vídeo de transparencia esté
-        /// CONFIRMADO activo —estado interno Y capa viva en el runtime— y solo entonces llama a
+        /// CONFIRMADO activo —estado interno Y capa en la lista del SDK— y solo entonces llama a
         /// <see cref="MontarAncladoTrasConfirmarTransparencia"/>. La regla es dura: en modo
         /// anclado la aplicación no pide nada al usuario hasta que el vídeo esté confirmado,
         /// porque la premisa del modo es superponer el modelo al edificio real y sin cámara no
@@ -345,8 +348,8 @@ namespace DigitalTwin.MR
                 navegador.Initialize(origenXR, Camera.main, index, indicadores);
                 navegador.ColocarEnNodoInicial();
 
-                // Menú de zonas: la última pieza de paridad con escritorio. Solo en este
-                // modo y solo con mandos (sin rig no habría forma de abrirlo ni de elegir).
+                // El menú del modo de navegación (zonas, iluminación solar, volver al
+                // selector). Solo con mandos: sin rig no habría forma de abrirlo ni de elegir.
                 if (rig != null)
                 {
                     var menuGo = new GameObject("~MenuZonasARRaiz");
@@ -357,7 +360,7 @@ namespace DigitalTwin.MR
                 else
                 {
                     Debug.LogWarning("[DigitalTwin][AR] Sin rig de mandos no se crea el " +
-                                     "menu de zonas: no habria boton con que abrirlo.");
+                                     "menu: no habria boton con que abrirlo.");
                 }
             }
 
@@ -381,6 +384,15 @@ namespace DigitalTwin.MR
             MRControllerRig rig, Transform desplazamientoCamara, Transform origenXR,
             GameObject raizApagada)
         {
+            // Traza de autorizacion con el estado medido EN ESTE INSTANTE: si alguna vez se ve
+            // este montaje con la capa fuera de la lista del SDK (en el visor), el guardian ha
+            // dejado pasar algo que no debia, y esta linea es la que lo demuestra sin conjeturas.
+            var transparenciaAlMontar = MRPassthroughController.Instancia;
+            Debug.LogWarning("[DigitalTwin][AR] Montaje anclado AUTORIZADO por el guardian. " +
+                             "Transparencia: " + (transparenciaAlMontar != null
+                                 ? transparenciaAlMontar.DiagnosticoBreve()
+                                 : "SIN CONTROLADOR (no deberia ocurrir)") + ".");
+
             if (MRPerfMonitor.Instancia != null)
                 MRPerfMonitor.Instancia.FijarFase("montado (Anclado)");
 
@@ -404,10 +416,11 @@ namespace DigitalTwin.MR
                 colocacion = colocacionGo.AddComponent<MRColocacionAnclaje>();
                 colocacion.Initialize(rig, Camera.main, index, anclaje, binder, origenXR);
 
-                // La leyenda del mando nace en la etapa A con los controles de navegación;
-                // aquí A/X abre el panel de anclaje y el gatillo también toma puntos.
+                // La leyenda del mando nace en la etapa A con los controles de navegación; en
+                // anclado el gatillo también toma puntos y A/X abre el menú (desde la ronda 9
+                // el mismo gesto que en navegación; el panel de anclaje se reabre desde él).
                 rig.FijarLeyenda("Gatillo · seleccionar / tomar punto\n" +
-                                 "A o X · panel de anclaje\n" +
+                                 "A o X · menu\n" +
                                  "Joystick · desplazar la ficha");
             }
             else
@@ -424,20 +437,31 @@ namespace DigitalTwin.MR
             MROcclusionService.Aplicar(index);
             ColliderBootstrapper.ExcluirPuntosDeNavegacionDeLaSeleccion(index);
 
-            // El menú de zonas NO se ofrece en anclado, a conciencia: aquí el
-            // desplazamiento es físico (el usuario anda por la obra) y un teletransporte
-            // desincronizaría la vista de su cuerpo — la misma razón por la que este modo
-            // tampoco ofrece puntos de navegación.
-            Debug.LogWarning("[DigitalTwin][AR] Menu de zonas no aplicable en modo anclado: " +
-                             "el desplazamiento es fisico y un salto desincronizaria al " +
-                             "usuario de su cuerpo.");
+            // Menú del modo anclado (ronda 9): mismo gesto y misma forma que el menú de
+            // navegación, para que se aprenda una sola vez. NO contiene zonas —aquí el
+            // desplazamiento es físico y un teletransporte desincronizaría la vista del
+            // cuerpo, la misma razón por la que este modo no ofrece puntos de navegación—;
+            // aloja el panel de anclaje, rehacer el anclaje y la vuelta al selector de modo.
+            MRMenuAnclado menuAnclado = null;
+            if (rig != null)
+            {
+                var menuAncladoGo = new GameObject("~MenuAncladoARRaiz");
+                Object.DontDestroyOnLoad(menuAncladoGo);
+                menuAnclado = menuAncladoGo.AddComponent<MRMenuAnclado>();
+                menuAnclado.Initialize(rig, Camera.main, colocacion);
+            }
+            else
+            {
+                Debug.LogWarning("[DigitalTwin][AR] Sin rig de mandos no se crea el menu del " +
+                                 "modo anclado: no habria boton con que abrirlo.");
+            }
 
             // La etiqueta de señalado solo existe en anclado: con los oclusores invisibles y en
             // un entorno oscuro es la única respuesta continua a «qué estoy señalando» que no
             // exige disparar ni depende de la iluminación de la sala.
             CrearInteraccion(rig, desplazamientoCamara, panel, colocador, navegador: null,
                              index: index, menuZonas: null, colocacionAnclaje: colocacion,
-                             identificarSenalado: true);
+                             identificarSenalado: true, menuAnclado: menuAnclado);
 
             Debug.LogWarning("[DigitalTwin][AR] Bootstrap de Realidad Aumentada completo " +
                              "(modo Anclado).");
@@ -545,7 +569,7 @@ namespace DigitalTwin.MR
                                              MetadataPanelController panel, WorldPanelPlacer colocador,
                                              MRNodeNavigator navegador, SceneModelIndex index,
                                              MRMenuZonas menuZonas, MRColocacionAnclaje colocacionAnclaje,
-                                             bool identificarSenalado)
+                                             bool identificarSenalado, MRMenuAnclado menuAnclado = null)
         {
             if (rig != null && desplazamientoCamara != null)
             {
@@ -553,13 +577,108 @@ namespace DigitalTwin.MR
                 interaccionGo.transform.SetParent(desplazamientoCamara, false);
                 var interaccion = interaccionGo.AddComponent<MRInteractionController>();
                 interaccion.Initialize(rig, panel, colocador, navegador, index, menuZonas,
-                                       colocacionAnclaje, identificarSenalado);
+                                       colocacionAnclaje, identificarSenalado, menuAnclado);
             }
             else
             {
                 Debug.LogError("[DigitalTwin][AR] Sin rig de mandos no se crea la interaccion: " +
                                "la escena queda contemplativa (sin seleccion ni desplazamiento).");
             }
+        }
+
+        // ==================================================================================
+        //  Volver al selector de modo sin reiniciar la aplicación (ronda 9)
+        // ==================================================================================
+
+        /// <summary>
+        /// Desmonta la sesión entera y vuelve al selector de modo, sin reiniciar la aplicación.
+        ///
+        /// LA VÍA ES RECARGAR LA ESCENA, no desmontar pieza a pieza, y es una decisión de
+        /// diseño: los dos modos siguen siendo «dos programas, no dos ajustes»
+        /// (DISENO-modo-anclado.md). Cada modo altera la escena de forma destructiva —el
+        /// anclado sustituye materiales por solo-profundidad, apaga renderers y colliders y
+        /// mueve la raíz del modelo con el registro; la navegación mueve el origen XR y oculta
+        /// hojas de puerta— y deshacerlo a mano exigiría un método de desmontaje en cada pieza,
+        /// con un residuo garantizado en cuanto una se olvidara. Recargar la escena devuelve
+        /// TODO el estado de escena al del fichero (materiales, transformadas, renderers,
+        /// colliders) por construcción; lo único que hay que hacer a mano es (1) destruir los
+        /// objetos persistentes de la sesión (DontDestroyOnLoad sobrevive a la recarga),
+        /// (2) reponer los estáticos de proceso, y (3) relanzar el arranque, porque
+        /// [RuntimeInitializeOnLoadMethod] corre una sola vez por proceso, no por escena.
+        ///
+        /// Lo que se conserva a propósito: el anclaje espacial persistido en el visor (volver
+        /// al selector no es olvidar el edificio; al reentrar en anclado se restaura solo) y
+        /// las preferencias de PlayerPrefs. El coste es recargar el modelo (segundos, los
+        /// mismos del arranque de la escena), que es exactamente el precio que ya se pagaba
+        /// con el reinicio completo, menos el APK y el motor.
+        /// </summary>
+        internal static void VolverAlSelector(string motivo)
+        {
+            // Guarda previa: si la escena no puede recargarse (no esta en Build Settings, caso
+            // posible solo en el Editor), abortarlo ANTES de desmontar nada deja la sesion
+            // usable; descubrirlo despues la dejaria destruida y sin recarga.
+            string escenaActiva = SceneManager.GetActiveScene().name;
+            if (!Application.CanStreamedLevelBeLoaded(escenaActiva))
+            {
+                Debug.LogError($"[DigitalTwin][AR] No se puede volver al selector: la escena " +
+                               $"'{escenaActiva}' no es recargable (¿falta en Build Settings?). " +
+                               "No se desmonta nada.");
+                return;
+            }
+
+            Debug.LogWarning($"[DigitalTwin][AR] VOLVER AL SELECTOR DE MODO ({motivo}): se " +
+                             "desmonta la sesion, se recarga la escena y se rearranca el " +
+                             "bootstrap. El anclaje persistido del visor NO se toca.");
+
+            // 1) Estado estático compartido que sobrevive a la recarga de escena.
+            Navigation.PuertaTransparente.Restituir();          // tolera renderers ya destruidos
+            ColliderBootstrapper.ReiniciarSeleccionDeSesion();  // deshace la exclusion del anclado
+            _initialized = false;
+            _gemeloMontado = false;
+            _raizModeloApagadaDuranteSelector = null;
+
+            // 2) Objetos persistentes de la sesión.
+            int destruidos = DestruirObjetosPersistentesDeSesion();
+            Debug.LogWarning($"[DigitalTwin][AR] {destruidos} objeto(s) persistente(s) de la " +
+                             "sesion destruidos antes de recargar.");
+
+            // 3) Recarga y rearranque. El manejador se registra ANTES de pedir la carga.
+            SceneManager.sceneLoaded += RearrancarTrasRecarga;
+            SceneManager.LoadScene(escenaActiva);
+        }
+
+        private static void RearrancarTrasRecarga(Scene escena, LoadSceneMode modo)
+        {
+            SceneManager.sceneLoaded -= RearrancarTrasRecarga;
+            Debug.LogWarning($"[DigitalTwin][AR] Escena '{escena.name}' recargada: se rearranca " +
+                             "el punto de entrada de Realidad Aumentada (RuntimeInitialize solo " +
+                             "corre una vez por proceso).");
+            Bootstrap();
+        }
+
+        /// <summary>
+        /// Destruye los objetos de la escena DontDestroyOnLoad creados por esta sesión. La
+        /// escena de persistentes no es enumerable directamente; el truco de la sonda —crear un
+        /// objeto, marcarlo persistente y preguntarle por su escena— sí da acceso a sus raíces.
+        /// El criterio es conservador: solo caen los nombres del propio proyecto (prefijo «~» y
+        /// el lienzo del panel), nunca los objetos de gestión de XR del motor, que también
+        /// viven ahí y sin los cuales no habría visor.
+        /// </summary>
+        private static int DestruirObjetosPersistentesDeSesion()
+        {
+            var sonda = new GameObject("~SondaEscenaPersistente");
+            Object.DontDestroyOnLoad(sonda);
+            int destruidos = 0;
+            foreach (var raiz in sonda.scene.GetRootGameObjects())
+            {
+                if (raiz == sonda) continue;
+                bool esDeLaSesion = raiz.name.StartsWith("~") || raiz.name == "DigitalTwinCanvasMR";
+                if (!esDeLaSesion) continue;
+                Object.Destroy(raiz);
+                destruidos++;
+            }
+            Object.Destroy(sonda);
+            return destruidos;
         }
 
     }
@@ -637,7 +756,7 @@ namespace DigitalTwin.MR
 
             private static bool TransparenciaActiva()
             {
-                // Confirmada de verdad (estado interno Y capa viva en el runtime), no la
+                // Confirmada de verdad (estado interno Y capa en la lista del SDK), no la
                 // creencia interna: la prueba del 15-08 demostró que pueden divergir. En el
                 // Editor ambas señales son falsas y el selector aparece tras la espera máxima,
                 // exactamente como antes de este cambio.
@@ -713,7 +832,7 @@ namespace DigitalTwin.MR
             }
 
             Debug.LogWarning("[DigitalTwin][AR] Modo anclado: esperando la confirmacion del " +
-                             "video de transparencia (capa viva en el runtime) antes de montar " +
+                             "video de transparencia (capa en la lista del SDK) antes de montar " +
                              "nada ni pedir nada al usuario.");
 
             int intentos = 0;
@@ -731,7 +850,8 @@ namespace DigitalTwin.MR
                 if (intentos < IntentosAntesDeDeclararFallo)
                 {
                     Debug.LogWarning($"[DigitalTwin][AR] Transparencia sin confirmar (intento " +
-                                     $"{intentos} de {IntentosAntesDeDeclararFallo}); nuevo " +
+                                     $"{intentos} de {IntentosAntesDeDeclararFallo}; " +
+                                     $"{transparencia.DiagnosticoBreve()}); nuevo " +
                                      $"intento en {SegundosEntreReintentos:0} s.");
                     yield return new WaitForSeconds(SegundosEntreReintentos);
                     continue;
@@ -739,7 +859,8 @@ namespace DigitalTwin.MR
                 if (intentos == IntentosAntesDeDeclararFallo)
                 {
                     Debug.LogError("[DigitalTwin][AR] El video de transparencia NO se ha podido " +
-                                   $"confirmar tras {intentos} intentos: el modo anclado no se " +
+                                   $"confirmar tras {intentos} intentos " +
+                                   $"({transparencia.DiagnosticoBreve()}): el modo anclado no se " +
                                    "monta, porque registrar puntos sin camara es peor que no " +
                                    "registrar. Causas conocidas: sesion OpenXR destruida por el " +
                                    "sistema y aun sin recrear (se resuelve sola al volver), o " +

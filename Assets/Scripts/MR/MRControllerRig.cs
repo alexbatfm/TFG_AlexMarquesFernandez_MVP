@@ -35,7 +35,7 @@ namespace DigitalTwin.MR
     /// solo para el Editor); el respaldo vive entero bajo <c>#if UNITY_EDITOR</c>, así que en
     /// una compilación NO EXISTE y el comportamiento con mandos reales queda intacto por
     /// construcción; y para lo que se quiere probar —grafo, carteles, tránsito, selección,
-    /// panel, puerta transparente, menú de zonas— el ratón es más rápido de manejar que un
+    /// panel, puerta transparente, menú— el ratón es más rápido de manejar que un
     /// mando simulado con teclado. La prioridad es estricta: si en algún momento aparece un
     /// mando XR válido, manda el mando; el registro anuncia cada cambio de fuente para que
     /// nunca haya duda de con qué se está probando.
@@ -61,11 +61,13 @@ namespace DigitalTwin.MR
 
         /// <summary>Texto de la leyenda de cada mando. Nace con los controles del modo de
         /// navegación (el rig se crea en la etapa A, antes de conocer el modo); el bootstrap
-        /// lo sustituye con <see cref="FijarLeyenda"/> cuando el modo elegido cambia el papel de
-        /// algún botón (en anclado, A/X abre el panel de anclaje y no un menú de zonas).</summary>
+        /// lo sustituye con <see cref="FijarLeyenda"/> cuando el modo elegido cambia el papel
+        /// de algún botón (en anclado, el gatillo también toma puntos de registro). Desde la
+        /// ronda 9, A/X abre el menú en LOS DOS modos: la etiqueta es «menú» a secas porque ya
+        /// no aloja solo zonas (iluminación solar, volver al selector...).</summary>
         private const string LeyendaPorDefecto =
             "Gatillo · seleccionar / viajar\n" +
-            "A o X · menu de zonas\n" +
+            "A o X · menu\n" +
             "Joystick · desplazar la ficha";
 
         private class Mano
@@ -423,7 +425,8 @@ namespace DigitalTwin.MR
         }
 
         /// <summary>Cierto en el fotograma en que se pulsa el botón primario (A/X) de cualquiera
-        /// de las manos (o, en el respaldo del Editor, la tecla M). Lo consume el menú de zonas.</summary>
+        /// de las manos (o, en el respaldo del Editor, la tecla M). Lo consume el menú del
+        /// modo activo (y, en anclado, el panel de colocación para ocultarse).</summary>
         public bool BotonMenuPulsadoEsteFrame()
         {
             foreach (var mano in _manos)

@@ -43,9 +43,10 @@ namespace DigitalTwin.MR
     ///     elementos se ocultan y cuántas mallas de sensor permanecen visibles.
     ///  3. VIGILANCIA DE LA CÁMARA (<see cref="MRVigilanciaCamaraAnclado"/>): comprueba y
     ///     registra clearFlags y color de borrado (con su alfa) al aplicar y a los 5 y 35
-    ///     segundos, junto con el estado REAL de la capa de transparencia (estado interno y
-    ///     capa viva en el runtime, que desde el 15-08 son cosas distintas); si alguien
-    ///     reescribe el borrado mientras la transparencia está activa, lo denuncia y lo repara.
+    ///     segundos, junto con el estado de la capa de transparencia (estado interno y capa en
+    ///     la lista del SDK, que desde el 15-08 son cosas distintas; el nombre honesto de la
+    ///     segunda es de la ronda 9); si alguien reescribe el borrado mientras la
+    ///     transparencia está activa, lo denuncia y lo repara.
     /// </summary>
     public static class MROcclusionService
     {
@@ -206,17 +207,22 @@ namespace DigitalTwin.MR
             }
 
             Color fondo = camara.backgroundColor;
+            // «capa en lista SDK» y no «capa viva en el runtime» (corregido en la ronda 9): lo
+            // que se consulta es la contabilidad en C# del SDK, que detecta la muerte por
+            // destrucción de sesión pero no una capa que el compositor haya dejado de mostrar
+            // por otra vía. Ver la nota de MRPassthroughController.
             Debug.LogWarning($"[DigitalTwin][AR] Estado camara/transparencia ({momento}): capa " +
-                             $"activa={capaActiva}, capa viva en el runtime={capaViva}, " +
+                             $"activa={capaActiva}, capa en lista SDK={capaViva}, " +
                              $"clearFlags={camara.clearFlags}, " +
                              $"fondo=({fondo.r:0.00},{fondo.g:0.00},{fondo.b:0.00},{fondo.a:0.00}).");
 
             if (capaActiva && !capaViva)
             {
-                Debug.LogError("[DigitalTwin][AR] El estado dice capa activa pero el runtime no " +
-                               "la tiene: la sesion OpenXR la destruyo. El controlador de " +
-                               "transparencia deberia recrearla solo; si esta linea reaparece " +
-                               "en la siguiente vigilancia, no lo esta haciendo.");
+                Debug.LogError("[DigitalTwin][AR] El estado dice capa activa pero la lista del " +
+                               "SDK no la tiene: la sesion OpenXR la destruyo. El latido del " +
+                               "controlador de transparencia deberia detectarlo y recrearla en " +
+                               "menos de 2 s; si esta linea reaparece en la siguiente " +
+                               "vigilancia, no lo esta haciendo.");
             }
 
             if (capaActiva &&

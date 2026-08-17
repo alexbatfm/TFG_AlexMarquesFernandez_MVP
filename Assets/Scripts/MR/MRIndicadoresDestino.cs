@@ -85,7 +85,7 @@ namespace DigitalTwin.MR
         /// la build porque TODA la interfaz del proyecto lo usa ya; aun así, si faltara
         /// (Shader.Find nulo, la clase de fallo conocida del proyecto), se avisa una vez y los
         /// carteles quedan con el material normal: visibles pero ocultables por la geometría.
-        /// Interno y no privado: el menú de zonas del visor usa el mismo material por el mismo
+        /// Interno y no privado: el menú del visor usa el mismo material por el mismo
         /// motivo (un muro entre el usuario y el menú no debe taparlo).
         /// </summary>
         internal static Material MaterialSiempreVisible()

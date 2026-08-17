@@ -8,9 +8,17 @@ using UnityEngine.UI;
 namespace DigitalTwin.MR
 {
     /// <summary>
-    /// Menú de zonas de la versión inmersiva: la última pieza de paridad con el escritorio.
-    /// Una lista con las salas del edificio que traslada directamente al punto representativo
-    /// de la elegida, sin pasos intermedios.
+    /// El MENÚ de la versión inmersiva en modo de navegación por nodos. Nació como «menú de
+    /// zonas» y desde el 15-08 la etiqueta se quedaba corta: además de la lista de salas aloja
+    /// la fila de iluminación solar, el pie de leyenda y, desde la ronda 9, la vuelta al
+    /// selector de modo — así que en la interfaz y en los comentarios se llama «menú» a secas.
+    /// EL NOMBRE DE LA CLASE SE CONSERVA a propósito: renombrar clase y fichero exige borrar el
+    /// .meta antiguo, y el montaje de trabajo no puede borrar ficheros (quedaría un .meta
+    /// huérfano y un GUID desincronizado); las zonas siguen siendo además su contenido
+    /// principal.
+    ///
+    /// La lista de salas traslada directamente al punto representativo de la elegida, sin
+    /// pasos intermedios.
     ///
     /// LA DEFINICIÓN DE LAS ZONAS NO VIVE AQUÍ. Igual que la alcanzabilidad
     /// (<see cref="NavReachability"/>), las zonas tienen una sola definición para las dos
@@ -88,6 +96,12 @@ namespace DigitalTwin.MR
         private Text _textoSolar;
         private bool _solarSenalada;
 
+        // Fila de vuelta al selector de modo (ronda 9): cambiar de modo sin reiniciar.
+        private BoxCollider _volumenSelector;
+        private Image _fondoSelector;
+        private bool _selectorSenalado;
+        private static readonly Color ColorFilaSelector = new Color(0.55f, 0.80f, 1f, 0.10f);
+
         public void Initialize(MRControllerRig rig, Camera camara, MRNodeNavigator navegador,
                                SceneModelIndex index)
         {
@@ -98,21 +112,24 @@ namespace DigitalTwin.MR
             _zonas = TourNavigationManager.CalcularZonas(index.NavPoints);
             if (_zonas.Count == 0)
             {
-                Debug.LogWarning("[DigitalTwin][AR] Menu de zonas: ningun punto de navegacion " +
-                                 "declara sala (LOC_Localizacion4); el menu queda inoperante.");
-                return;
+                // Antes de la ronda 9 el menu se abandonaba aqui; ahora aloja tambien la vuelta
+                // al selector de modo, asi que se construye igualmente (sin filas de zona).
+                Debug.LogWarning("[DigitalTwin][AR] Menu: ningun punto de navegacion declara " +
+                                 "sala (LOC_Localizacion4); se construye sin filas de zona.");
             }
 
             Construir();
-            Debug.LogWarning($"[DigitalTwin][AR] Menu de zonas del visor listo: {_zonas.Count} " +
-                             "zonas del modelo. Se abre y cierra con el boton primario del " +
-                             "mando (tecla M en el respaldo del Editor).");
+            Debug.LogWarning($"[DigitalTwin][AR] Menu del visor listo: {_zonas.Count} zonas del " +
+                             "modelo, fila de iluminacion solar y vuelta al selector de modo. " +
+                             "Se abre y cierra con el boton primario del mando (tecla M en el " +
+                             "respaldo del Editor).");
         }
 
         private void Construir()
         {
             float altoPx = AltoCabeceraPx + _zonas.Count * AltoFilaPx
                          + AltoSeparadorPx + AltoFilaPx      // fila de iluminación solar
+                         + AltoSeparadorPx + AltoFilaPx      // fila de vuelta al selector
                          + AltoPiePx + MargenPx * 2f;        // pie de leyenda
             var canvas = DigitalTwin.UI.RuntimeUIFactory.CreateWorldCanvas(
                 "~MenuZonasAR", anchoPx: AnchoPx, altoPx: altoPx, anchoMetros: AnchoMetros);
@@ -130,7 +147,7 @@ namespace DigitalTwin.MR
             if (material != null) fondo.material = material;
 
             var cabecera = DigitalTwin.UI.RuntimeUIFactory.CreateText(_raiz, "Cabecera",
-                "Ir a una zona", 24, TextAnchor.MiddleCenter, Color.white, FontStyle.Bold);
+                "Menú", 24, TextAnchor.MiddleCenter, Color.white, FontStyle.Bold);
             var rtCab = (RectTransform)cabecera.transform;
             rtCab.anchorMin = rtCab.anchorMax = new Vector2(0.5f, 1f);
             rtCab.pivot = new Vector2(0.5f, 1f);
@@ -203,6 +220,36 @@ namespace DigitalTwin.MR
             _volumenSolar.center = Vector3.zero;
             y += AltoFilaPx;
 
+            // --- Fila de vuelta al selector de modo (ronda 9) ------------------------------
+            // Hasta ahora cambiar de modo exigia reiniciar la aplicacion; en una demostracion
+            // eso es inaceptable. La fila desmonta la sesion entera y recarga la escena (ver
+            // MRDigitalTwinBootstrap.VolverAlSelector y su justificacion del desmontaje).
+            y += AltoSeparadorPx;
+            var selectorRect = DigitalTwin.UI.RuntimeUIFactory.CreateRect(_raiz, "VolverAlSelector");
+            selectorRect.anchorMin = selectorRect.anchorMax = new Vector2(0.5f, 1f);
+            selectorRect.pivot = new Vector2(0.5f, 1f);
+            selectorRect.anchoredPosition = new Vector2(0f, -y);
+            selectorRect.sizeDelta = new Vector2(AnchoPx - MargenPx * 2f, AltoFilaPx);
+
+            _fondoSelector = DigitalTwin.UI.RuntimeUIFactory.CreatePanel(selectorRect, "Fondo",
+                ColorFilaSelector);
+            DigitalTwin.UI.RuntimeUIFactory.StretchToParent((RectTransform)_fondoSelector.transform);
+            if (material != null) _fondoSelector.material = material;
+
+            var textoSelector = DigitalTwin.UI.RuntimeUIFactory.CreateText(selectorRect, "Texto",
+                "Volver al selector de modo", 20, TextAnchor.MiddleLeft, ColorTextoNormal);
+            var rtSelector = (RectTransform)textoSelector.transform;
+            DigitalTwin.UI.RuntimeUIFactory.StretchToParent(rtSelector);
+            rtSelector.offsetMin = new Vector2(18f, 0f);
+            rtSelector.offsetMax = new Vector2(-10f, 0f);
+            if (material != null) textoSelector.material = material;
+
+            _volumenSelector = selectorRect.gameObject.AddComponent<BoxCollider>();
+            _volumenSelector.isTrigger = true;
+            _volumenSelector.size = new Vector3(AnchoPx - MargenPx * 2f, AltoFilaPx, 1f);
+            _volumenSelector.center = Vector3.zero;
+            y += AltoFilaPx;
+
             // --- Pie de leyenda: los gestos del menú, dichos en el propio menú -------------
             var pie = DigitalTwin.UI.RuntimeUIFactory.CreateText(_raiz, "Pie",
                 "Gatillo: elegir (viaja hasta la zona)  ·  A o X: cerrar",
@@ -239,6 +286,7 @@ namespace DigitalTwin.MR
             // rayo): fila señalada por los volúmenes, gatillo para elegir.
             _filaSenalada = -1;
             _solarSenalada = false;
+            _selectorSenalado = false;
             float mejorDist = float.MaxValue;
             if (_rig.TryGetRayo(out Ray rayo))
             {
@@ -259,6 +307,15 @@ namespace DigitalTwin.MR
                     _filaSenalada = -1;
                     _solarSenalada = true;
                 }
+                if (_volumenSelector != null &&
+                    _volumenSelector.Raycast(rayo, out RaycastHit hitSelector, 20f) &&
+                    hitSelector.distance < mejorDist)
+                {
+                    mejorDist = hitSelector.distance;
+                    _filaSenalada = -1;
+                    _solarSenalada = false;
+                    _selectorSenalado = true;
+                }
             }
 
             string salaActual = _navegador != null ? _navegador.SalaActual : string.Empty;
@@ -273,11 +330,21 @@ namespace DigitalTwin.MR
             if (_fondoSolar != null)
                 _fondoSolar.color = _solarSenalada ? ColorFilaSenalada
                                                    : new Color(1f, 0.82f, 0.2f, 0.10f);
+            if (_fondoSelector != null)
+                _fondoSelector.color = _selectorSenalado ? ColorFilaSenalada : ColorFilaSelector;
 
-            bool haySenal = _filaSenalada >= 0 || _solarSenalada;
+            bool haySenal = _filaSenalada >= 0 || _solarSenalada || _selectorSenalado;
             _rig.MostrarImpacto(haySenal ? mejorDist : 0f, haySenal);
 
             if (!_rig.GatilloPulsadoEsteFrame()) return;
+
+            if (_selectorSenalado)
+            {
+                Cerrar();
+                MRDigitalTwinBootstrap.VolverAlSelector(
+                    "fila 'Volver al selector de modo' del menu de navegacion");
+                return;
+            }
 
             if (_solarSenalada)
             {
@@ -315,7 +382,7 @@ namespace DigitalTwin.MR
 
             if (_navegador != null && _navegador.EnTransito)
             {
-                Debug.LogWarning("[DigitalTwin][AR] Menu de zonas: no se abre durante un " +
+                Debug.LogWarning("[DigitalTwin][AR] Menu: no se abre durante un " +
                                  "desplazamiento.");
                 return;
             }
@@ -340,7 +407,7 @@ namespace DigitalTwin.MR
             _raiz.gameObject.SetActive(true);
             Abierto = true;
             var solarAbierto = Visual.SolarLightingController.Instancia;
-            Debug.LogWarning($"[DigitalTwin][AR] Menu de zonas abierto ({_filas.Count} zonas; " +
+            Debug.LogWarning($"[DigitalTwin][AR] Menu abierto ({_filas.Count} zonas; " +
                              $"sala actual: '{(_navegador != null ? _navegador.SalaActual : "?")}'; " +
                              $"iluminacion solar: '{(solarAbierto != null ? solarAbierto.Descripcion : "no disponible")}').");
         }
@@ -350,7 +417,7 @@ namespace DigitalTwin.MR
             _raiz.gameObject.SetActive(false);
             Abierto = false;
             _filaSenalada = -1;
-            Debug.LogWarning("[DigitalTwin][AR] Menu de zonas cerrado.");
+            Debug.LogWarning("[DigitalTwin][AR] Menu cerrado.");
         }
     }
 }

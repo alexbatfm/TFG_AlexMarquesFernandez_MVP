@@ -205,6 +205,23 @@ namespace DigitalTwin.Core
         }
 
         /// <summary>
+        /// Repone el estado de selección de proceso al de un arranque limpio. Lo llama la
+        /// vuelta al selector de modo (ronda 9): la exclusión de los puntos de navegación es
+        /// una decisión DEL MODO anclado, y como vive en un estático sobrevive a la recarga de
+        /// escena — sin esta reposición, un anclado→selector→navegación heredaría la máscara
+        /// del modo anterior. Los colisionadores desactivados por la vía de respaldo no se
+        /// reactivan aquí: pertenecen a la escena vieja y la recarga los reinstancia intactos.
+        /// </summary>
+        public static void ReiniciarSeleccionDeSesion()
+        {
+            if (!_excluirPuntosDeNavegacionDeSeleccion) return;
+            _excluirPuntosDeNavegacionDeSeleccion = false;
+            Debug.LogWarning("[DigitalTwin] Mascara de seleccion repuesta al estado de arranque " +
+                             "(los puntos de navegacion vuelven a ser seleccionables donde el " +
+                             "modo lo permita).");
+        }
+
+        /// <summary>
         /// Máscara de física para el raycast de selección de elementos (Fase 2): todas las capas
         /// de física salvo, en modo anclado, la de los puntos de navegación (ver arriba).
         /// </summary>
