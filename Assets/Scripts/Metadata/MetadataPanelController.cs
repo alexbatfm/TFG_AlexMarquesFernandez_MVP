@@ -196,8 +196,15 @@ namespace DigitalTwin.Metadata
         /// vuelve translúcido se pierde legibilidad justo cuando más importa.
         ///
         /// Por eso solo se toca el alfa del fondo: los textos y los valores de sensor siguen a
-        /// opacidad completa. Un valor en torno a 0,7 funciona bien; por debajo de 0,5 el texto
-        /// empieza a competir con lo que hay detrás.
+        /// opacidad completa.
+        ///
+        /// Qué valor. Con vídeo de transparencia el fondo del panel es la ÚNICA superficie que
+        /// escribe alfa bajo el texto, y ese alfa es lo que el compositor del visor usa para
+        /// mezclar con la cámara: 0,55 dejaba pasar entre el 45 % y el 70 % del vídeo (según la
+        /// convención de mezcla del shader de UI) y el panel no se leía delante de una sala
+        /// iluminada (sesión del 17-08). Desde entonces el visor usa 1,0 —opaco—, que es el único
+        /// valor cuyo resultado no depende de la convención; 0,92 es el mínimo que aún garantiza
+        /// contraste sobre blanco. Ver el comentario en MRDigitalTwinBootstrap.MontarComun.
         /// </summary>
         public void SetOpacidadFondo(float alfa)
         {

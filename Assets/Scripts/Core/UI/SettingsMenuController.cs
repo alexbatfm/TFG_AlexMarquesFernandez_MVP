@@ -26,8 +26,14 @@ namespace DigitalTwin.UI
     {
         private const float AnchoPanel = 460f;
         private const float AltoFila = 38f;
+        // Altura MÍNIMA de una línea de ayuda. La real se mide sobre el texto (ver Ajuste): una
+        // ayuda de dos líneas ocupa lo que ocupa, no lo que se le reservó.
         private const float AltoAyuda = 15f;
         private const float Margen = 18f;
+        // Separación entre las dos filas de acción del pie. Se separan algo más que los ajustes
+        // porque son de naturaleza distinta (una vuelve, la otra sale) y no deben leerse como una
+        // pareja de opciones intercambiables.
+        private const float SeparacionAcciones = 10f;
 
         // Por encima del menú de zonas (30-31) y del panel de metadatos.
         private const int OrdenBase = 200;
@@ -101,11 +107,15 @@ namespace DigitalTwin.UI
             panel.anchorMin = panel.anchorMax = new Vector2(0.5f, 0.5f);
             panel.pivot = new Vector2(0.5f, 0.5f);
             panel.anchoredPosition = Vector2.zero;
-            // Título + subtítulo + 3 ajustes con ayuda + 2 acciones. La ayuda de la iluminación
-            // solar ocupa dos líneas, así que se reserva una altura extra para ella.
-            panel.sizeDelta = new Vector2(AnchoPanel,
-                Margen * 2 + 30f + 22f + 3 * (AltoFila + AltoAyuda + 8f) + AltoAyuda
-                + 2 * (AltoFila + 6f));
+            // El ancho es fijo; la altura NO: se calcula al final, a partir de lo que ocupan de
+            // verdad las filas (ver el cierre de este método). Hasta el 17-08 la altura salía de
+            // una fórmula que reservaba «una línea extra» para la ayuda de la iluminación solar,
+            // pero el recorrido vertical de las filas no la reservaba: la segunda línea de esa
+            // ayuda se dibujaba por debajo de su rectángulo (los textos se crean con Overflow) y
+            // el botón «Volver a la escena», dibujado después, la tapaba —la etiqueta «cortada»
+            // de la sesión del 17-08—. Medir y derivar evita que el siguiente texto largo lo
+            // repita.
+            panel.sizeDelta = new Vector2(AnchoPanel, 0f);
 
             var fondo = RuntimeUIFactory.CreatePanel(panel, "Fondo", new Color(0.07f, 0.09f, 0.13f, 0.97f));
             RuntimeUIFactory.StretchToParent((RectTransform)fondo.transform);
@@ -136,7 +146,39 @@ namespace DigitalTwin.UI
                                  new Color(0.30f, 0.13f, 0.13f, 1f), PulsarSalir, OrdenBase + 5,
                                  out _textoSalir);
 
+            // Altura del panel = lo que ocupa el contenido + margen inferior. `y` apunta al
+            // borde inferior de la última fila menos su separación; se deshace esa separación
+            // para que el margen bajo el último botón sea exactamente `Margen`, igual que arriba.
+            // Las filas están ancladas al borde superior del panel, así que cambiar la altura
+            // aquí no las mueve.
+            float alturaContenido = -(y + SeparacionAcciones);
+            panel.sizeDelta = new Vector2(AnchoPanel, alturaContenido + Margen);
+
             Refrescar();
+        }
+
+        /// <summary>
+        /// Altura que necesita un texto para mostrarse entero con el ancho que tiene asignado,
+        /// nunca por debajo de <paramref name="minimo"/>. Mismo criterio que
+        /// <c>MetadataPanelController.ColocarBloque</c>: los textos se crean con Overflow
+        /// vertical (no se recorta información en silencio), así que quien maqueta tiene que
+        /// darles el sitio que piden. Se añade un pequeño resguardo porque el cuerpo de letra
+        /// efectivo se redondea con la escala del lienzo y una línea puede quedar al límite.
+        /// </summary>
+        private static float AltoNecesario(Text texto, float minimo)
+        {
+            const float Resguardo = 2f;
+            float preferida = texto.preferredHeight;
+            if (preferida <= 0f)
+            {
+                // Sin fuente cargada o sin ancho aún: no se puede medir. Se avisa y se cae al
+                // mínimo, que es lo que había antes de medir.
+                Debug.LogWarning("[DigitalTwin] No se ha podido medir la altura del texto de ayuda '" +
+                                 texto.name + "' del menú de configuración; se usa la mínima (" +
+                                 minimo.ToString("0") + " px).");
+                return minimo;
+            }
+            return Mathf.Max(minimo, preferida + Resguardo);
         }
 
         private void Cabecera(RectTransform panel, string texto, int tam, FontStyle estilo,
@@ -194,8 +236,12 @@ namespace DigitalTwin.UI
             rtA.anchorMin = new Vector2(0, 1); rtA.anchorMax = new Vector2(1, 1);
             rtA.pivot = new Vector2(0.5f, 1);
             rtA.anchoredPosition = new Vector2(0, y);
+            // Primero el ancho (del que depende el ajuste de línea) y después la altura medida
+            // sobre ese ancho: una ayuda de dos líneas recibe dos líneas de sitio.
             rtA.sizeDelta = new Vector2(-Margen * 2 - 8f, AltoAyuda);
-            y -= AltoAyuda + 5f;
+            float altoAyuda = AltoNecesario(txtAyuda, AltoAyuda);
+            rtA.sizeDelta = new Vector2(-Margen * 2 - 8f, altoAyuda);
+            y -= altoAyuda + 5f;
 
             return der;
         }
@@ -224,7 +270,7 @@ namespace DigitalTwin.UI
             RuntimeUIFactory.StretchToParent((RectTransform)etiqueta.transform);
 
             ClickRouter.Instance.Register(fila, alPulsar, orden, isActive: () => _abierto);
-            y -= AltoFila + 6f;
+            y -= AltoFila + SeparacionAcciones;
             return fondo;
         }
 

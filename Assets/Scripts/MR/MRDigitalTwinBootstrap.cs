@@ -517,10 +517,26 @@ namespace DigitalTwin.MR
             // Los gestos del panel, dichos en el propio panel (segundo disparo cierra,
             // conjuntos desplegables, joystick desplaza): eran funciones implementadas y mudas.
             panel.UsarAyudaDeVisor();
-            // Fondo translúcido: da sensación de espacio sin restar legibilidad al texto, que
-            // sigue a opacidad completa (ver SetOpacidadFondo). Ante el usuario y a 1,1 m ocupa
-            // bastante campo de visión, y en modo anclado lo que hay detrás es el edificio real.
-            panel.SetOpacidadFondo(0.55f);
+            // Fondo OPACO (alfa 1,0). Hasta el 17-08 iba a 0,55 «para dar sensación de espacio»,
+            // y en la primera sesión con vídeo de transparencia real el panel no se leía delante
+            // de una sala iluminada. La razón es de composición, no de gusto: este lienzo se
+            // dibuja sobre una capa de PROYECCIÓN con alfa (cámara SolidColor alfa 0), y el
+            // compositor del visor mezcla esa capa con el vídeo según el alfa que quede escrito
+            // en cada píxel. Bajo el fondo del panel no hay nada opaco (en anclado la geometría
+            // es solo-profundidad y no escribe color), así que el alfa que llega al compositor
+            // es el del propio fondo —o su cuadrado, según la convención de mezcla que aplique
+            // el shader de UI—: con 0,55 pasaba entre el 45 % y el 70 % del vídeo, y una ventana
+            // al mediodía sobre un fondo (0,05, 0,06, 0,08) deja el texto blanco a ~2:1 de
+            // contraste. Con 1,0 el fondo escribe alfa 1 se aplique la convención que se aplique
+            // y no pasa nada del vídeo (contraste texto/fondo ≈ 9:1, el del propio panel). Es el
+            // único valor cuyo resultado no depende de cómo componga el runtime.
+            //
+            // El alfa es por píxel: sube solo donde el fondo del panel pinta (su rectángulo en
+            // el lienzo de mundo). El resto de la escena sigue con la cámara a alfa 0 y los
+            // oclusores sin color, así que la transparencia fuera del panel no cambia. Si algún
+            // día se quiere recuperar algo de translucidez, el mínimo que sigue leyéndose sobre
+            // blanco es 0,92 (≈ 5,7:1 en la peor convención); por debajo, no.
+            panel.SetOpacidadFondo(1f);
 
             // Identificación del elemento seleccionado, por triple vía: caja de aristas y tinte
             // sobre el objeto, panel colocado ante el usuario, y línea que une panel y objeto.

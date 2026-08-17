@@ -36,6 +36,11 @@ namespace DigitalTwin.EditorTools
     ///    la universidad. Los dos comparten el fondo <c>#16181C</c> a propósito: la identidad de
     ///    la aplicación se diseñó a partir del fondo que esta pantalla ya tenía. Si falta el
     ///    fichero del bloque, se avisa y la secuencia se queda con el institucional solo.
+    ///  - IMAGEN DE RV con las dos identidades. «Virtual Reality Splash Image» es una sola
+    ///    textura que el visor puede mostrar durante la carga, sin secuencia; si solo lleva el
+    ///    institucional, la pantalla de carga del visor solo enseña ese (observado el 17-08).
+    ///    Por eso se prefiere <c>splash_vr_identidad.png</c> (institucional arriba, bloque de la
+    ///    aplicación debajo, mismo fondo), con caída a la imagen solo institucional si falta.
     ///
     /// Por qué se aplica sola y no desde un menú. La identidad institucional del entregable no es
     /// algo que nadie deba estar cambiando: no hay decisión que tomar cada vez, y una opción de
@@ -66,7 +71,18 @@ namespace DigitalTwin.EditorTools
         // Imagen opcional para el campo «Virtual Reality Splash Image» del reproductor: la que
         // Unity muestra en pantallas de RV mientras carga, antes de la secuencia de logotipos.
         // Ya lleva el fondo oscuro pintado, porque ese campo no se compone sobre el color de fondo.
-        private const string RutaImagenRV = "Assets/Branding/splash_vr_unizar.png";
+        //
+        // Ese campo admite UNA sola textura, sin secuencia. En la sesión de visor del 17-08 la
+        // pantalla de carga mostraba solo el logotipo institucional: es lo único que llevaba la
+        // imagen de RV (`splash_vr_unizar.png`), y la secuencia de dos logotipos —que sí lleva el
+        // bloque de la aplicación desde ese mismo día— o no se compuso en el visor o el APK se
+        // compiló antes de que se aplicara. Para que la carga muestre las dos identidades ocurra
+        // lo que ocurra con la secuencia, se prefiere `splash_vr_identidad.png` (institucional
+        // arriba, bloque de la aplicación debajo, ambos en negativo sobre el mismo #16181C; se
+        // compone a partir de los dos ficheros existentes, sin dibujar nada nuevo). Si no está,
+        // se cae a la imagen solo institucional y se avisa.
+        private const string RutaImagenRVIdentidad = "Assets/Branding/splash_vr_identidad.png";
+        private const string RutaImagenRVSoloUnizar = "Assets/Branding/splash_vr_unizar.png";
 
         // Decisión (ver resumen de la clase). Ponerlo a false devuelve el fondo blanco original.
         private const bool FondoOscuro = true;
@@ -131,7 +147,8 @@ namespace DigitalTwin.EditorTools
                                   "del paquete de identidad bajo Assets/ y la herramienta lo anadira sola.");
 
             // Imagen de RV: opcional. Si no está, se avisa y se deja el campo vacío.
-            Texture2D imagenRV = CargarImagenRV();
+            string rutaImagenRV;
+            Texture2D imagenRV = CargarImagenRV(out rutaImagenRV);
 
             if (!forzar && YaConfigurada(sprite, lockup, fondo, estiloUnity, imagenRV)) return;
 
@@ -158,7 +175,7 @@ namespace DigitalTwin.EditorTools
                                  ? $" y despues {System.IO.Path.GetFileName(rutaLockup)} durante {SegundosLockup:0.0} s,"
                                  : ", SIN bloque de la aplicacion,") +
                              $" en secuencia tras el de Unity ({estiloUnity}), animacion estatica, imagen " +
-                             $"de RV {(imagenRV != null ? RutaImagenRV : "SIN ASIGNAR")}. Esta " +
+                             $"de RV {(imagenRV != null ? rutaImagenRV : "SIN ASIGNAR")}. Esta " +
                              $"configuracion es unica para escritorio y visor.");
 
             AvisarSiElLogoNoContrasta(sprite, fondo);
@@ -188,14 +205,30 @@ namespace DigitalTwin.EditorTools
             return sprite;
         }
 
-        private static Texture2D CargarImagenRV()
+        /// <summary>
+        /// Imagen para «Virtual Reality Splash Image». Prefiere la que lleva las dos identidades
+        /// (institucional + aplicación); si no está, avisa y usa la solo institucional; si tampoco,
+        /// avisa y deja el campo vacío. Devuelve en <paramref name="ruta"/> cuál se ha usado.
+        /// </summary>
+        private static Texture2D CargarImagenRV(out string ruta)
         {
-            var importador = AssetImporter.GetAtPath(RutaImagenRV) as TextureImporter;
+            ruta = RutaImagenRVIdentidad;
+            var importador = AssetImporter.GetAtPath(ruta) as TextureImporter;
             if (importador == null)
             {
-                Debug.LogWarning($"[Splash] No hay {RutaImagenRV}: el campo «Virtual Reality Splash " +
+                Debug.LogWarning($"[Splash] Falta {RutaImagenRVIdentidad} (imagen de RV con las dos " +
+                                  "identidades): la pantalla de carga del visor mostrara solo el " +
+                                  "logotipo institucional. Copia el fichero a Assets/Branding/ y la " +
+                                  "herramienta lo asignara sola.");
+                ruta = RutaImagenRVSoloUnizar;
+                importador = AssetImporter.GetAtPath(ruta) as TextureImporter;
+            }
+            if (importador == null)
+            {
+                Debug.LogWarning($"[Splash] No hay {RutaImagenRVSoloUnizar}: el campo «Virtual Reality Splash " +
                                   "Image» del reproductor queda vacio (el visor mostrara solo la " +
                                   "secuencia de logotipos, si el runtime la compone).");
+                ruta = null;
                 return null;
             }
             // Ese campo pide una Texture2D corriente, no un Sprite.
@@ -205,9 +238,9 @@ namespace DigitalTwin.EditorTools
                 importador.mipmapEnabled = false;
                 importador.SaveAndReimport();
             }
-            var tex = AssetDatabase.LoadAssetAtPath<Texture2D>(RutaImagenRV);
+            var tex = AssetDatabase.LoadAssetAtPath<Texture2D>(ruta);
             if (tex == null)
-                Debug.LogWarning($"[Splash] {RutaImagenRV} existe pero no se ha podido cargar como Texture2D.");
+                Debug.LogWarning($"[Splash] {ruta} existe pero no se ha podido cargar como Texture2D.");
             return tex;
         }
 
