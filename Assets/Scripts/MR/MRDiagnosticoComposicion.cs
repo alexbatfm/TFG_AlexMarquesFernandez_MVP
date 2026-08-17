@@ -197,8 +197,11 @@ namespace DigitalTwin.MR
         private int _lecturasCompletadas;
         private int _lecturasRegistradas;
 
-        // Seguimiento de la cabeza.
-        private InputTrackingState _estadoSeguimientoAnterior = (InputTrackingState)(-1);
+        // Seguimiento de la cabeza. No se usa un centinela (InputTrackingState)(-1): el enum es
+        // [Flags] sin signo, así que -1 no es una constante válida (CS0221). Un bool de «ya leído»
+        // hace el mismo trabajo, igual que _presenciaLeida.
+        private InputTrackingState _estadoSeguimientoAnterior;
+        private bool _seguimientoLeido;
         private bool _presenciaAnterior;
         private bool _presenciaLeida;
 
@@ -591,9 +594,10 @@ namespace DigitalTwin.MR
             var cabeza = InputDevices.GetDeviceAtXRNode(XRNode.Head);
             if (!cabeza.isValid) return;
             if (cabeza.TryGetFeatureValue(CommonUsages.trackingState, out InputTrackingState estado) &&
-                estado != _estadoSeguimientoAnterior)
+                (!_seguimientoLeido || estado != _estadoSeguimientoAnterior))
             {
-                bool primera = _estadoSeguimientoAnterior == (InputTrackingState)(-1);
+                bool primera = !_seguimientoLeido;
+                _seguimientoLeido = true;
                 _estadoSeguimientoAnterior = estado;
                 bool posicion = (estado & InputTrackingState.Position) != 0;
                 bool rotacion = (estado & InputTrackingState.Rotation) != 0;
