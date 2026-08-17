@@ -68,7 +68,7 @@ namespace DigitalTwin.EditorTools
             PlayerSettings.SetIcons(NamedBuildTarget.Unknown, new[] { master }, IconKind.Any);
 
             var android = NamedBuildTarget.Android;
-            var kinds = PlayerSettings.GetPlatformIconKinds(android);
+            var kinds = PlayerSettings.GetSupportedIconKinds(android);
             if (kinds == null || kinds.Length == 0)
             {
                 Debug.LogError("[Iconos] Unity no devuelve tipos de icono para Android: falta el módulo " +
@@ -129,7 +129,7 @@ namespace DigitalTwin.EditorTools
                 ? AssetDatabase.GetAssetPath(porDefecto[0]) : "VACÍO";
 
             var android = NamedBuildTarget.Android;
-            var kinds = PlayerSettings.GetPlatformIconKinds(android) ?? Array.Empty<PlatformIconKind>();
+            var kinds = PlayerSettings.GetSupportedIconKinds(android) ?? Array.Empty<PlatformIconKind>();
             var lineas = new List<string> { $"[Iconos] Icono por defecto: {def}." };
             int vacias = 0, ajenas = 0;
 
