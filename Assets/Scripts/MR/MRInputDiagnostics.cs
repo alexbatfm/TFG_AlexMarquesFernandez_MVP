@@ -103,19 +103,54 @@ namespace DigitalTwin.MR
             Debug.LogWarning(sb.ToString());
         }
 
+        /// <summary>Instancia viva, para no duplicar el diagnóstico si una escena se carga sin
+        /// que el barrido de la vuelta al selector lo haya destruido. La comparación con null
+        /// usa el operador de Unity, así que un objeto destruido cuenta como ausente.</summary>
+        private static MRInputDiagnostics _instancia;
+
         /// <summary>
         /// Punto de entrada propio, independiente del arranque de la escena.
         ///
         /// Se registra por separado a conciencia: si el diagnóstico dependiera de
         /// <see cref="MRDigitalTwinBootstrap"/>, un fallo en ese arranque se llevaría por delante
         /// justamente la herramienta que sirve para diagnosticarlo.
+        ///
+        /// La suscripción a sceneLoaded existe por lo que midió el registro del visor del
+        /// 17-08: la vuelta al selector de modo (ronda 9) barre los objetos persistentes con
+        /// prefijo «~» —este incluido— y recarga la escena, pero [RuntimeInitializeOnLoadMethod]
+        /// corre una sola vez por proceso. Resultado medido: volcados en t=0/2/5/10 s del primer
+        /// arranque y NI UNO tras las tres recargas de aquella sesión. Cada rearranque crea su
+        /// propio rig de mandos, así que cada uno merece su ventana de diagnóstico.
         /// </summary>
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         private static void Instalar()
         {
+            // AfterSceneLoad corre después de cargarse la primera escena, de modo que este
+            // manejador solo dispara en las cargas posteriores (las vueltas al selector).
+            UnityEngine.SceneManagement.SceneManager.sceneLoaded +=
+                (escena, modo) => Crear($"recarga de la escena '{escena.name}'");
+            Crear(null);
+        }
+
+        private static void Crear(string motivoDeReinstalacion)
+        {
+            if (_instancia != null)
+            {
+                Debug.LogWarning("[DigitalTwin][AR][Diag] El diagnostico de entrada anterior " +
+                                 $"sigue vivo al cargar escena ({motivoDeReinstalacion}); no se duplica.");
+                return;
+            }
+
             var go = new GameObject("~DiagnosticoEntradaAR");
             Object.DontDestroyOnLoad(go);
-            go.AddComponent<MRInputDiagnostics>();
+            _instancia = go.AddComponent<MRInputDiagnostics>();
+
+            if (motivoDeReinstalacion != null)
+            {
+                Debug.LogWarning("[DigitalTwin][AR][Diag] Diagnostico de entrada reinstalado tras " +
+                                 $"{motivoDeReinstalacion} (el anterior cayo con el barrido de la " +
+                                 "sesion); volcados en t=0/2/5/10 s desde ahora.");
+            }
         }
     }
 }

@@ -29,12 +29,26 @@ namespace DigitalTwin.Core
 
             // Los managers se marcan DontDestroyOnLoad; esta guarda evita duplicarlos si la
             // escena se recarga durante la misma ejecución.
-            if (_initialized) return;
+            if (_initialized)
+            {
+                Debug.LogWarning("[DigitalTwin] El gemelo de escritorio ya estaba inicializado en " +
+                                 "este proceso; no se monta de nuevo.");
+                return;
+            }
 
             // Fase 5: en la escena de Realidad Mixta manda MRDigitalTwinBootstrap. Ambos se
             // autoejecutan al cargar cualquier escena, así que sin esta comprobación el modo
             // escritorio montaría aquí su tour y su cámara, pisando al del visor.
-            if (DigitalTwin.MR.MRDigitalTwinBootstrap.EsEscenaMR()) return;
+            //
+            // La retirada se anuncia a propósito: en el registro del visor del 17-08 la traza de
+            // entrada aparecía y después nada más de este bootstrap, y desde el registro no se
+            // podía distinguir «se retiró porque la escena es de RA» de «murió sin decir por qué».
+            if (DigitalTwin.MR.MRDigitalTwinBootstrap.EsEscenaMR())
+            {
+                Debug.LogWarning("[DigitalTwin] Escena de Realidad Aumentada: el punto de entrada " +
+                                 "de escritorio se retira y manda MRDigitalTwinBootstrap.");
+                return;
+            }
 
             if (Camera.main == null)
             {
