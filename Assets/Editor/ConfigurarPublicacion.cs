@@ -24,13 +24,13 @@ namespace DigitalTwin.EditorTools
     /// además lo único que distingue dos <c>.apk</c> con la misma versión, y sirve para saber, con
     /// el visor en la mano, cuál de los dos está instalado.
     ///
-    /// Lo que esta herramienta no hace, y hay que hacer a mano una sola vez: el icono de la
-    /// aplicación (Player Settings, sección Icon) y la casilla de compilación de desarrollo, que
-    /// en Unity 6 vive en el perfil de compilación y no en los ajustes del reproductor. Ambos
-    /// pasos están en <c>TFG/docs/roadmap/DESPLIEGUE-nube-y-publicacion.md</c>. Se dejan fuera a
-    /// propósito: las interfaces de programación de iconos y de perfiles han cambiado entre
-    /// versiones del editor, y una herramienta que no compila bloquea todo el proyecto, no solo a
-    /// sí misma.
+    /// Lo que esta herramienta no hace. El icono de la aplicación lo asigna
+    /// <see cref="ConfigurarIconosApp"/> (Tools > TFG > Asignar iconos de la aplicación), que
+    /// desde el 17-08-2026 existe como herramienta aparte para no acoplar la identidad textual,
+    /// que se ejecuta una vez, a los ficheros de imagen, que pueden cambiar. La casilla de
+    /// compilación de desarrollo, que en Unity 6 vive en el perfil de compilación y no en los
+    /// ajustes del reproductor, sigue siendo manual; el paso está en
+    /// <c>TFG/docs/roadmap/DESPLIEGUE-nube-y-publicacion.md</c>.
     /// </summary>
     public static class ConfigurarPublicacion
     {
@@ -65,8 +65,8 @@ namespace DigitalTwin.EditorTools
             Debug.LogWarning(
                 $"[Publicación] Identidad aplicada: {NombreVisible} ({Identificador}), versión {Version}, " +
                 $"compilación {anterior} -> {PlayerSettings.Android.bundleVersionCode}, permiso de red forzado. " +
-                "Quedan a mano el icono (Player Settings > Icon) y la casilla Development Build del perfil " +
-                "de compilación.");
+                "Iconos: Tools > TFG > Asignar iconos de la aplicación. Queda a mano la casilla " +
+                "Development Build del perfil de compilación.");
         }
 
         /// <summary>

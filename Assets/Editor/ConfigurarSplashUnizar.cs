@@ -4,8 +4,9 @@ using UnityEngine;
 namespace DigitalTwin.EditorTools
 {
     /// <summary>
-    /// Configura la pantalla de presentación de la aplicación para que muestre el logotipo de la
-    /// Universidad de Zaragoza junto al de Unity, del mismo modo que este último aparece de serie.
+    /// Configura la pantalla de presentación de la aplicación para que muestre, tras el logotipo
+    /// de Unity, el de la Universidad de Zaragoza y después el bloque de identidad de la propia
+    /// aplicación («Gemelo Digital BIM»), en secuencia y sobre el mismo fondo.
     ///
     /// La configuración de la pantalla de presentación (<see cref="PlayerSettings.SplashScreen"/>)
     /// es única para todo el proyecto: no existe una por plataforma. Lo que se fija aquí lo ven
@@ -26,6 +27,15 @@ namespace DigitalTwin.EditorTools
     ///  - Animación ESTÁTICA, no <c>Dolly</c>. El zum sobre un panel fijado a la cabeza es un
     ///    movimiento visual sin correlato vestibular; es justo lo que las guías de confort en XR
     ///    piden evitar, y en escritorio no aporta nada.
+    ///  - DOS logotipos propios, en este orden: primero el institucional, después el bloque de la
+    ///    aplicación (símbolo más nombre, <c>logo_app_lockup_*</c>). El orden sigue la convención
+    ///    editor → producto: quien avala aparece antes que lo avalado, y el último fotograma antes
+    ///    de la interfaz es el nombre de lo que arranca. Se descartó componer los dos en una sola
+    ///    imagen porque no existe ese fichero y fabricarlo aquí sería inventar identidad; y se
+    ///    descartó sustituir el institucional por el de la aplicación porque el entregable es de
+    ///    la universidad. Los dos comparten el fondo <c>#16181C</c> a propósito: la identidad de
+    ///    la aplicación se diseñó a partir del fondo que esta pantalla ya tenía. Si falta el
+    ///    fichero del bloque, se avisa y la secuencia se queda con el institucional solo.
     ///
     /// Por qué se aplica sola y no desde un menú. La identidad institucional del entregable no es
     /// algo que nadie deba estar cambiando: no hay decisión que tomar cada vez, y una opción de
@@ -49,6 +59,10 @@ namespace DigitalTwin.EditorTools
         private const string RutaLogoPositivo = "Assets/Branding/logo_unizar.png";
         // Logotipo institucional en negativo (trazo blanco, transparente): para fondo oscuro.
         private const string RutaLogoNegativo = "Assets/Branding/logo_unizar_negativo.png";
+        // Bloque de identidad de la aplicación (símbolo + «GEMELO DIGITAL BIM»), en sus dos
+        // versiones. Vienen del paquete de identidad (TFG/utility/Identidad Corporativa).
+        private const string RutaLockupPositivo = "Assets/Branding/logo_app_lockup_positivo.png";
+        private const string RutaLockupNegativo = "Assets/Branding/logo_app_lockup_negativo.png";
         // Imagen opcional para el campo «Virtual Reality Splash Image» del reproductor: la que
         // Unity muestra en pantallas de RV mientras carga, antes de la secuencia de logotipos.
         // Ya lleva el fondo oscuro pintado, porque ese campo no se compone sobre el color de fondo.
@@ -61,6 +75,10 @@ namespace DigitalTwin.EditorTools
         private static readonly Color ColorFondoOscuro = new Color(0.086f, 0.094f, 0.110f, 1f); // #16181C
         private static readonly Color ColorFondoClaro = Color.white;
         private const float SegundosLogo = 2.5f;
+        // El bloque de la aplicación dura algo menos: es la segunda pantalla propia y la suma
+        // (Unity 2 s + 2,5 s + 2 s) es lo que el usuario espera con el casco puesto antes de ver
+        // nada. Por debajo de 2 s Unity no garantiza que se lea.
+        private const float SegundosLockup = 2f;
 
         static ConfigurarSplashUnizar()
         {
@@ -94,18 +112,68 @@ namespace DigitalTwin.EditorTools
                 ? PlayerSettings.SplashScreen.UnityLogoStyle.LightOnDark
                 : PlayerSettings.SplashScreen.UnityLogoStyle.DarkOnLight;
 
-            var importador = AssetImporter.GetAtPath(rutaLogo) as TextureImporter;
-            if (importador == null)
+            var sprite = CargarSprite(rutaLogo);
+            if (sprite == null)
             {
-                // Sin logotipo no se puede hacer nada, pero tampoco es un error del proyecto:
-                // basta con avisar y seguir.
-                Debug.LogWarning($"[Splash] No se encuentra {rutaLogo}; la pantalla de presentacion " +
-                                  "se queda con el logotipo de Unity solamente.");
+                // Sin logotipo institucional no se puede hacer nada, pero tampoco es un error del
+                // proyecto: basta con avisar y seguir.
+                Debug.LogWarning($"[Splash] No se encuentra {rutaLogo} o no carga como Sprite; la " +
+                                  "pantalla de presentacion se queda con el logotipo de Unity solamente.");
                 return;
             }
 
-            // La pantalla de presentación solo admite Sprite. Importado como textura normal, el
-            // campo del logotipo lo rechaza sin explicar por qué.
+            // Bloque de identidad de la aplicación: opcional. Sin él, secuencia de un solo logotipo.
+            string rutaLockup = oscuro ? RutaLockupNegativo : RutaLockupPositivo;
+            var lockup = CargarSprite(rutaLockup);
+            if (lockup == null)
+                Debug.LogWarning($"[Splash] Falta {rutaLockup} (bloque de identidad de la aplicacion): " +
+                                  "la secuencia lleva solo el logotipo institucional. Copia Branding/ " +
+                                  "del paquete de identidad bajo Assets/ y la herramienta lo anadira sola.");
+
+            // Imagen de RV: opcional. Si no está, se avisa y se deja el campo vacío.
+            Texture2D imagenRV = CargarImagenRV();
+
+            if (!forzar && YaConfigurada(sprite, lockup, fondo, estiloUnity, imagenRV)) return;
+
+            PlayerSettings.SplashScreen.show = true;
+            PlayerSettings.SplashScreen.showUnityLogo = true;   // obligatorio con licencia Personal
+            PlayerSettings.SplashScreen.drawMode = PlayerSettings.SplashScreen.DrawMode.AllSequential;
+            PlayerSettings.SplashScreen.animationMode = PlayerSettings.SplashScreen.AnimationMode.Static;
+            PlayerSettings.SplashScreen.unityLogoStyle = estiloUnity;
+            PlayerSettings.SplashScreen.backgroundColor = fondo;
+            PlayerSettings.SplashScreen.logos = lockup != null
+                ? new[]
+                {
+                    PlayerSettings.SplashScreenLogo.Create(SegundosLogo, sprite),
+                    PlayerSettings.SplashScreenLogo.Create(SegundosLockup, lockup)
+                }
+                : new[] { PlayerSettings.SplashScreenLogo.Create(SegundosLogo, sprite) };
+            PlayerSettings.virtualRealitySplashScreen = imagenRV;
+
+            AssetDatabase.SaveAssets();
+            Debug.LogWarning($"[Splash] Pantalla de presentacion configurada: fondo " +
+                             $"{(oscuro ? "OSCURO" : "CLARO")} ({ColorHex(fondo)}), logotipo " +
+                             $"{System.IO.Path.GetFileName(rutaLogo)} durante {SegundosLogo:0.0} s" +
+                             (lockup != null
+                                 ? $" y despues {System.IO.Path.GetFileName(rutaLockup)} durante {SegundosLockup:0.0} s,"
+                                 : ", SIN bloque de la aplicacion,") +
+                             $" en secuencia tras el de Unity ({estiloUnity}), animacion estatica, imagen " +
+                             $"de RV {(imagenRV != null ? RutaImagenRV : "SIN ASIGNAR")}. Esta " +
+                             $"configuracion es unica para escritorio y visor.");
+
+            AvisarSiElLogoNoContrasta(sprite, fondo);
+            if (lockup != null) AvisarSiElLogoNoContrasta(lockup, fondo);
+        }
+
+        /// <summary>
+        /// Carga un PNG como Sprite, corrigiendo antes su importación si hace falta. La pantalla de
+        /// presentación solo admite Sprite: importado como textura normal, el campo del logotipo lo
+        /// rechaza sin explicar por qué. Devuelve null, sin lanzar, si el fichero no existe.
+        /// </summary>
+        private static Sprite CargarSprite(string ruta)
+        {
+            var importador = AssetImporter.GetAtPath(ruta) as TextureImporter;
+            if (importador == null) return null;
             if (importador.textureType != TextureImporterType.Sprite)
             {
                 importador.textureType = TextureImporterType.Sprite;
@@ -114,40 +182,10 @@ namespace DigitalTwin.EditorTools
                 importador.mipmapEnabled = false;
                 importador.SaveAndReimport();
             }
-
-            var sprite = AssetDatabase.LoadAssetAtPath<Sprite>(rutaLogo);
+            var sprite = AssetDatabase.LoadAssetAtPath<Sprite>(ruta);
             if (sprite == null)
-            {
-                Debug.LogWarning($"[Splash] {rutaLogo} no se ha podido cargar como Sprite.");
-                return;
-            }
-
-            // Imagen de RV: opcional. Si no está, se avisa y se deja el campo vacío.
-            Texture2D imagenRV = CargarImagenRV();
-
-            if (!forzar && YaConfigurada(sprite, fondo, estiloUnity, imagenRV)) return;
-
-            PlayerSettings.SplashScreen.show = true;
-            PlayerSettings.SplashScreen.showUnityLogo = true;   // obligatorio con licencia Personal
-            PlayerSettings.SplashScreen.drawMode = PlayerSettings.SplashScreen.DrawMode.AllSequential;
-            PlayerSettings.SplashScreen.animationMode = PlayerSettings.SplashScreen.AnimationMode.Static;
-            PlayerSettings.SplashScreen.unityLogoStyle = estiloUnity;
-            PlayerSettings.SplashScreen.backgroundColor = fondo;
-            PlayerSettings.SplashScreen.logos = new[]
-            {
-                PlayerSettings.SplashScreenLogo.Create(SegundosLogo, sprite)
-            };
-            PlayerSettings.virtualRealitySplashScreen = imagenRV;
-
-            AssetDatabase.SaveAssets();
-            Debug.LogWarning($"[Splash] Pantalla de presentacion configurada: fondo " +
-                             $"{(oscuro ? "OSCURO" : "CLARO")} ({ColorHex(fondo)}), logotipo " +
-                             $"{System.IO.Path.GetFileName(rutaLogo)} durante {SegundosLogo:0.0} s en " +
-                             $"secuencia con el de Unity ({estiloUnity}), animacion estatica, imagen " +
-                             $"de RV {(imagenRV != null ? RutaImagenRV : "SIN ASIGNAR")}. Esta " +
-                             $"configuracion es unica para escritorio y visor.");
-
-            AvisarSiElLogoNoContrasta(sprite, fondo);
+                Debug.LogWarning($"[Splash] {ruta} existe pero no se ha podido cargar como Sprite.");
+            return sprite;
         }
 
         private static Texture2D CargarImagenRV()
@@ -216,12 +254,14 @@ namespace DigitalTwin.EditorTools
                                   $"otra version del logotipo.");
         }
 
-        private static bool YaConfigurada(Sprite esperado, Color fondo,
+        private static bool YaConfigurada(Sprite esperado, Sprite lockup, Color fondo,
                                           PlayerSettings.SplashScreen.UnityLogoStyle estilo,
                                           Texture2D imagenRV)
         {
             var logos = PlayerSettings.SplashScreen.logos;
-            if (logos == null || logos.Length != 1 || logos[0].logo != esperado) return false;
+            int esperados = lockup != null ? 2 : 1;
+            if (logos == null || logos.Length != esperados || logos[0].logo != esperado) return false;
+            if (lockup != null && logos[1].logo != lockup) return false;
             if (!PlayerSettings.SplashScreen.show || !PlayerSettings.SplashScreen.showUnityLogo) return false;
             if (PlayerSettings.SplashScreen.drawMode != PlayerSettings.SplashScreen.DrawMode.AllSequential) return false;
             if (PlayerSettings.SplashScreen.animationMode != PlayerSettings.SplashScreen.AnimationMode.Static) return false;
