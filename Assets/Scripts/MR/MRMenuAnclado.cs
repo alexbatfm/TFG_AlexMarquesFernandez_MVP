@@ -27,6 +27,23 @@ namespace DigitalTwin.MR
     /// <see cref="MRColocacionAnclaje.FotogramaBotonConsumido"/> para no abrirse con la misma
     /// pulsación que cerró el panel — el orden de ejecución entre componentes no está
     /// garantizado y sin esa marca la pulsación haría las dos cosas a la vez.
+    ///
+    /// CONFIRMACIÓN DE LA ACCIÓN IRREVERSIBLE (17-08, tras la ronda 9). «Volver al selector de
+    /// modo» desmonta la sesión y recarga la escena; en este modo, además, abandona el
+    /// registro que el usuario acabe de hacer. Una pulsación accidental del gatillo no puede
+    /// costar eso. Se reproduce el patrón que el menú de escritorio ya aplica a su acción
+    /// irreversible (<see cref="DigitalTwin.Core.UI.SettingsMenuController"/>, «Salir de la
+    /// aplicación»; guía, cap. 5, «Confirmación de la acción irreversible»): confirmación en
+    /// DOS PASOS SOBRE LA PROPIA FILA, sin diálogo aparte. El primer gatillo no hace nada
+    /// salvo cambiar el texto de la fila («¿Seguro? Pulsa otra vez para volver») y subir la
+    /// intensidad de su color; el segundo ejecuta. Cancelan: el gatillo sobre cualquier otra
+    /// fila (que además la ejecuta, como en escritorio), el gatillo fuera de las filas
+    /// (equivalente al clic fuera del panel), el botón primario A/X (equivalente a Escape:
+    /// cancela y deja el menú abierto) y cualquier cierre del menú (p. ej. el panel de
+    /// colocación reclamando el rayo). Mientras dura, el pie de leyenda dice QUÉ se pierde
+    /// —calculado con el estado real del registro, ver
+    /// <see cref="MRColocacionAnclaje.AvisoAlAbandonarElModo"/>— y cómo cancelar. Ver
+    /// <see cref="PulsarSelector"/>.
     /// </summary>
     public class MRMenuAnclado : MonoBehaviour
     {
@@ -36,7 +53,9 @@ namespace DigitalTwin.MR
         private const float AltoCabeceraPx = 56f;
         private const float AltoFilaPx = 46f;
         private const float AltoSeparadorPx = 10f;
-        private const float AltoPiePx = 40f;
+        // El pie tiene sitio para DOS líneas: durante la confirmación de la vuelta al selector
+        // dice qué se pierde y cómo cancelar (misma medida en MRMenuZonas).
+        private const float AltoPiePx = 48f;
         private const float MargenPx = 10f;
         private const float AnchoMetros = 0.42f;
         private const float DistanciaAlAbrir = 1.0f;
@@ -45,6 +64,18 @@ namespace DigitalTwin.MR
         private static readonly Color ColorFilaSenalada = new Color(1f, 0.82f, 0.2f, 0.30f);
         private static readonly Color ColorTextoNormal = new Color(0.85f, 0.88f, 0.93f, 1f);
         private static readonly Color ColorFilaSelector = new Color(0.55f, 0.80f, 1f, 0.10f);
+        // Confirmación pendiente: la misma familia cálida del señalado, más intensa —cambio de
+        // intensidad y no de tono, como en escritorio (rojo apagado -> rojo intenso)—, con dos
+        // grados según el rayo la señale o no, para que el estado se vea sin leer.
+        private static readonly Color ColorFilaConfirmando = new Color(1f, 0.55f, 0.15f, 0.40f);
+        private static readonly Color ColorFilaConfirmandoSenalada = new Color(1f, 0.55f, 0.15f, 0.70f);
+        private static readonly Color ColorPie = new Color(0.65f, 0.68f, 0.73f, 1f);
+        private static readonly Color ColorPieAviso = new Color(1f, 0.85f, 0.55f, 1f);
+
+        private const string TextoSelector = "Volver al selector de modo";
+        private const string TextoSelectorConfirmando = "¿Seguro? Pulsa otra vez para volver";
+        private const string PieNormal = "Gatillo: elegir  ·  A o X: cerrar";
+        private const string PieCancelar = "Gatillo fuera de las filas o A o X: cancelar";
 
         public bool Abierto { get; private set; }
 
@@ -57,12 +88,17 @@ namespace DigitalTwin.MR
             public string Id;
             public BoxCollider Volumen;
             public Image Fondo;
+            public Text Texto;
             public Color ColorBase;
         }
 
         private RectTransform _raiz;
         private readonly List<Fila> _filas = new List<Fila>();
         private int _filaSenalada = -1;
+        private Text _pie;
+
+        // Confirmación en dos pasos de la vuelta al selector (ver cabecera de la clase).
+        private bool _confirmandoSelector;
 
         public void Initialize(MRControllerRig rig, Camera camara, MRColocacionAnclaje colocacion)
         {
@@ -110,19 +146,76 @@ namespace DigitalTwin.MR
             y = CrearFila("panel", "Panel de anclaje", ColorFilaNormal, y, material);
             y = CrearFila("rehacer", "Rehacer el anclaje", ColorFilaNormal, y, material);
             y += AltoSeparadorPx;
-            y = CrearFila("selector", "Volver al selector de modo", ColorFilaSelector, y, material);
+            y = CrearFila("selector", TextoSelector, ColorFilaSelector, y, material);
 
-            var pie = DigitalTwin.UI.RuntimeUIFactory.CreateText(_raiz, "Pie",
-                "Gatillo: elegir  ·  A o X: cerrar",
-                16, TextAnchor.MiddleCenter, new Color(0.65f, 0.68f, 0.73f, 1f));
-            var rtPie = (RectTransform)pie.transform;
+            _pie = DigitalTwin.UI.RuntimeUIFactory.CreateText(_raiz, "Pie", PieNormal,
+                16, TextAnchor.MiddleCenter, ColorPie);
+            var rtPie = (RectTransform)_pie.transform;
             rtPie.anchorMin = rtPie.anchorMax = new Vector2(0.5f, 1f);
             rtPie.pivot = new Vector2(0.5f, 1f);
             rtPie.anchoredPosition = new Vector2(0f, -y);
             rtPie.sizeDelta = new Vector2(AnchoPx - MargenPx * 2f, AltoPiePx);
-            if (material != null) pie.material = material;
+            if (material != null) _pie.material = material;
 
             _raiz.gameObject.SetActive(false);
+        }
+
+        // ==================================================================================
+        //  Confirmación en dos pasos de la vuelta al selector (patrón del menú de escritorio)
+        // ==================================================================================
+
+        /// <summary>Primer gatillo sobre la fila: solo avisa. Segundo: ejecuta.</summary>
+        private void PulsarSelector()
+        {
+            if (!_confirmandoSelector)
+            {
+                _confirmandoSelector = true;
+                RefrescarConfirmacion();
+                Debug.LogWarning("[DigitalTwin][AR] Menu anclado: vuelta al selector PENDIENTE " +
+                                 "DE CONFIRMACION (segundo gatillo sobre la fila para ejecutar; " +
+                                 "gatillo fuera, A/X u otra fila cancelan). Aviso: '" +
+                                 (_pie != null ? _pie.text.Replace('\n', ' ') : "?") + "'.");
+                return;
+            }
+            _confirmandoSelector = false;   // confirmado: no es una cancelacion, no se traza como tal
+            RefrescarConfirmacion();
+            Cerrar();
+            MRDigitalTwinBootstrap.VolverAlSelector(
+                "fila 'Volver al selector de modo' del menu del modo anclado, confirmada");
+        }
+
+        private void CancelarConfirmacion(string motivo)
+        {
+            if (!_confirmandoSelector) return;
+            _confirmandoSelector = false;
+            RefrescarConfirmacion();
+            Debug.LogWarning($"[DigitalTwin][AR] Menu anclado: vuelta al selector CANCELADA ({motivo}).");
+        }
+
+        /// <summary>Texto de la fila y del pie según haya o no confirmación pendiente. Los
+        /// colores los pinta Update cada fotograma. En el pie, la primera línea es el aviso de
+        /// pérdida calculado con el estado real del registro (no una frase fija), y la segunda,
+        /// cómo cancelar.</summary>
+        private void RefrescarConfirmacion()
+        {
+            var filaSelector = _filas.Find(f => f.Id == "selector");
+            if (filaSelector != null && filaSelector.Texto != null)
+                filaSelector.Texto.text = _confirmandoSelector ? TextoSelectorConfirmando : TextoSelector;
+
+            if (_pie == null) return;
+            if (!_confirmandoSelector)
+            {
+                _pie.text = PieNormal;
+                _pie.fontSize = 16;
+                _pie.color = ColorPie;
+                return;
+            }
+            string aviso = _colocacion != null
+                ? _colocacion.AvisoAlAbandonarElModo()
+                : "Se pierde el registro no guardado de esta sesion";
+            _pie.text = aviso + "\n" + PieCancelar;
+            _pie.fontSize = 14;
+            _pie.color = ColorPieAviso;
         }
 
         private float CrearFila(string id, string texto, Color colorBase, float y, Material material)
@@ -150,7 +243,10 @@ namespace DigitalTwin.MR
             volumen.size = new Vector3(AnchoPx - MargenPx * 2f, AltoFilaPx, 1f);
             volumen.center = Vector3.zero;
 
-            _filas.Add(new Fila { Id = id, Volumen = volumen, Fondo = fondoFila, ColorBase = colorBase });
+            _filas.Add(new Fila
+            {
+                Id = id, Volumen = volumen, Fondo = fondoFila, Texto = textoFila, ColorBase = colorBase
+            });
             return y + AltoFilaPx;
         }
 
@@ -191,15 +287,34 @@ namespace DigitalTwin.MR
             }
 
             for (int i = 0; i < _filas.Count; i++)
-                _filas[i].Fondo.color = i == _filaSenalada ? ColorFilaSenalada
-                                                           : _filas[i].ColorBase;
+            {
+                bool senalada = i == _filaSenalada;
+                Color color;
+                if (_confirmandoSelector && _filas[i].Id == "selector")
+                    color = senalada ? ColorFilaConfirmandoSenalada : ColorFilaConfirmando;
+                else
+                    color = senalada ? ColorFilaSenalada : _filas[i].ColorBase;
+                _filas[i].Fondo.color = color;
+            }
 
             bool haySenal = _filaSenalada >= 0;
             _rig.MostrarImpacto(haySenal ? mejorDist : 0f, haySenal);
 
-            if (!_rig.GatilloPulsadoEsteFrame() || _filaSenalada < 0) return;
+            if (!_rig.GatilloPulsadoEsteFrame()) return;
+
+            if (_filaSenalada < 0)
+            {
+                // Gatillo fuera de las filas: el equivalente al clic fuera del panel en
+                // escritorio. Cancela la confirmacion pendiente (si la hay) y no hace nada mas.
+                CancelarConfirmacion("gatillo fuera de las filas");
+                return;
+            }
 
             string id = _filas[_filaSenalada].Id;
+            if (id == "selector") { PulsarSelector(); return; }
+
+            // Cualquier otra fila cancela la confirmacion Y se ejecuta, como en escritorio.
+            CancelarConfirmacion("se ha elegido otra fila: '" + id + "'");
             Cerrar();
             Accionar(id);
         }
@@ -219,10 +334,7 @@ namespace DigitalTwin.MR
                     else Debug.LogWarning("[DigitalTwin][AR] Menu anclado: no hay interfaz de " +
                                           "colocacion; no se puede rehacer el anclaje.");
                     break;
-                case "selector":
-                    MRDigitalTwinBootstrap.VolverAlSelector(
-                        "fila 'Volver al selector de modo' del menu del modo anclado");
-                    break;
+                // "selector" no pasa por aqui: lo gestiona PulsarSelector (dos pasos).
                 default:
                     Debug.LogWarning($"[DigitalTwin][AR] Menu anclado: fila desconocida '{id}'.");
                     break;
@@ -231,7 +343,15 @@ namespace DigitalTwin.MR
 
         private void Alternar()
         {
-            if (Abierto) { Cerrar(); return; }
+            if (Abierto)
+            {
+                // Con una confirmacion pendiente, el boton primario la cancela en vez de cerrar
+                // el menu: es la reaccion esperable de quien se ha arrepentido (mismo papel que
+                // Escape en el menu de escritorio).
+                if (_confirmandoSelector) { CancelarConfirmacion("boton primario A/X"); return; }
+                Cerrar();
+                return;
+            }
             Abrir();
         }
 
@@ -248,6 +368,8 @@ namespace DigitalTwin.MR
                            + Vector3.up * (-altoMetros * 0.5f + 0.10f);
             _raiz.rotation = Quaternion.LookRotation(mirada, Vector3.up);
 
+            _confirmandoSelector = false;
+            RefrescarConfirmacion();
             _raiz.gameObject.SetActive(true);
             Abierto = true;
             Debug.LogWarning("[DigitalTwin][AR] Menu del modo anclado abierto.");
@@ -255,6 +377,9 @@ namespace DigitalTwin.MR
 
         private void Cerrar()
         {
+            // Cerrar por cualquier via (A/X, otra fila, el panel de colocacion reclamando el
+            // rayo) descarta la confirmacion pendiente: no puede quedar viva con el menu cerrado.
+            if (_confirmandoSelector) CancelarConfirmacion("el menu se cierra");
             _raiz.gameObject.SetActive(false);
             Abierto = false;
             _filaSenalada = -1;

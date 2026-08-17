@@ -208,6 +208,46 @@ namespace DigitalTwin.MR
         /// (misma acción que el botón «Recolocar desde cero» del propio panel).</summary>
         public void RehacerAnclaje() => RecolocarDesdeCero();
 
+        /// <summary>
+        /// Una línea, para el aviso de confirmación de «Volver al selector de modo» del menú
+        /// del modo anclado: QUÉ trabajo de ESTA sesión se perdería al abandonar el modo ahora,
+        /// calculado con el estado real del registro y de la persistencia, no una frase fija.
+        /// Volver al selector conserva el anclaje persistido en el visor (decisión de la ronda
+        /// 9), así que cuando el anclaje vigente está guardado se dice que no se pierde nada;
+        /// solo cuenta como pérdida lo que no está en el visor: los puntos tomados de un
+        /// registro en curso, un registro confirmado cuya persistencia no ha llegado a
+        /// «Guardado», o el registro aplicado sin soporte de anclaje (Editor). Debe caber en
+        /// una línea del pie del menú (~55 caracteres a 14 px).
+        /// </summary>
+        public string AvisoAlAbandonarElModo()
+        {
+            bool guardado = _anclaje != null
+                            && _anclaje.Estado == MRAnchorService.EstadoAnclaje.Anclado
+                            && _anclaje.Persistencia == MRAnchorService.EstadoPersistencia.Guardado;
+            switch (_fase)
+            {
+                case Fase.Registrando:
+                {
+                    int n = _registro.Cuenta;
+                    if (n == 0) return "Sin puntos tomados: no se pierde nada";
+                    return n == 1 ? "Se pierde el punto tomado en esta sesión"
+                                  : $"Se pierden los {n} puntos tomados en esta sesión";
+                }
+                case Fase.Confirmado:
+                    return guardado
+                        ? "El anclaje guardado se conserva y se restaura al volver"
+                        : "Se pierde el registro de esta sesión: no está guardado";
+                case Fase.Restaurado:
+                    return "El anclaje guardado se conserva y se restaura al volver";
+                case Fase.SinSoporte:
+                    return "Se pierde el registro de esta sesión (sin anclaje aquí)";
+                default:
+                    return guardado
+                        ? "El anclaje guardado se conserva y se restaura al volver"
+                        : "Se pierde el registro no guardado de esta sesión";
+            }
+        }
+
         public void Initialize(MRControllerRig rig, Camera camara, SceneModelIndex index,
                                MRAnchorService anclaje, ModelAnchorBinder binder, Transform origenXR)
         {
