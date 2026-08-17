@@ -118,6 +118,12 @@ namespace DigitalTwin.MR
             // aparece antes que las trazas de montaje y no queda sepultado.
             MRPassthroughController.Crear();
 
+            // Diagnóstico de la composición (ronda 10, 17-08): SOLO LEE. Mide el modo de mezcla,
+            // la pila de capas de cada xrEndFrame, el formato del objetivo de color que URP elige
+            // (con o sin canal alfa) y el alfa real del objetivo del ojo. No cambia ningún ajuste
+            // ni toca la capa de transparencia; sus trazas llevan [DigitalTwin][AR][Compos].
+            MRDiagnosticoComposicion.Crear();
+
             // Los anclajes de los mandos cuelgan del desplazamiento de camara, no de la raiz de la
             // escena: las poses que entrega el sistema estan en el espacio del origen de realidad
             // extendida, y colgarlas de la raiz haria que los mandos se despegaran de las manos en
@@ -637,10 +643,13 @@ namespace DigitalTwin.MR
             _gemeloMontado = false;
             _raizModeloApagadaDuranteSelector = null;
 
-            // 2) Objetos persistentes de la sesión.
-            int destruidos = DestruirObjetosPersistentesDeSesion();
+            // 2) Objetos persistentes de la sesión. Se registran los NOMBRES, no solo la cuenta:
+            // en el registro del 17-08 el barrido dio 11, 11 y 10 objetos en las tres vueltas y
+            // no había forma de saber qué objeto faltaba en la tercera ni de auditar que no
+            // cayera ninguno del motor.
+            int destruidos = DestruirObjetosPersistentesDeSesion(out string nombres);
             Debug.LogWarning($"[DigitalTwin][AR] {destruidos} objeto(s) persistente(s) de la " +
-                             "sesion destruidos antes de recargar.");
+                             $"sesion destruidos antes de recargar: {nombres}.");
 
             // 3) Recarga y rearranque. El manejador se registra ANTES de pedir la carga.
             SceneManager.sceneLoaded += RearrancarTrasRecarga;
@@ -664,20 +673,24 @@ namespace DigitalTwin.MR
         /// el lienzo del panel), nunca los objetos de gestión de XR del motor, que también
         /// viven ahí y sin los cuales no habría visor.
         /// </summary>
-        private static int DestruirObjetosPersistentesDeSesion()
+        private static int DestruirObjetosPersistentesDeSesion(out string nombres)
         {
             var sonda = new GameObject("~SondaEscenaPersistente");
             Object.DontDestroyOnLoad(sonda);
             int destruidos = 0;
+            var lista = new System.Text.StringBuilder();
             foreach (var raiz in sonda.scene.GetRootGameObjects())
             {
                 if (raiz == sonda) continue;
                 bool esDeLaSesion = raiz.name.StartsWith("~") || raiz.name == "DigitalTwinCanvasMR";
                 if (!esDeLaSesion) continue;
+                if (lista.Length > 0) lista.Append(", ");
+                lista.Append(raiz.name);
                 Object.Destroy(raiz);
                 destruidos++;
             }
             Object.Destroy(sonda);
+            nombres = destruidos > 0 ? lista.ToString() : "(ninguno)";
             return destruidos;
         }
 
