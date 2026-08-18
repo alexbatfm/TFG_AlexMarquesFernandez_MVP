@@ -536,7 +536,7 @@ namespace DigitalTwin.MR
             // oclusores sin color, así que la transparencia fuera del panel no cambia. Si algún
             // día se quiere recuperar algo de translucidez, el mínimo que sigue leyéndose sobre
             // blanco es 0,92 (≈ 5,7:1 en la peor convención); por debajo, no.
-            panel.SetOpacidadFondo(1f);
+            panel.SetOpacidadFondo(0.91f);
 
             // Identificación del elemento seleccionado, por triple vía: caja de aristas y tinte
             // sobre el objeto, panel colocado ante el usuario, y línea que une panel y objeto.
