@@ -58,8 +58,43 @@ namespace DigitalTwin.MR
         /// visible encima de la realidad es feo pero diagnosticable, mientras que ocultar sin
         /// ocluir haría desaparecer sensores tras muros inexistentes sin explicación.
         /// </summary>
+        /// <summary>
+        /// Versión síncrona, conservada para el Editor y para cualquier llamada que no necesite
+        /// repartir el trabajo. Consume la incremental de una sentada.
+        /// </summary>
         public static bool Aplicar(SceneModelIndex index)
         {
+            bool resultado = false;
+            var pasos = AplicarIncremental(index, null, r => resultado = r);
+            while (pasos.MoveNext()) { }
+            return resultado;
+        }
+
+        /// <summary>
+        /// Igual que <see cref="Aplicar"/>, pero repartido entre fotogramas.
+        ///
+        /// Este método recorre TODOS los renderers de la escena, decide para cada uno si ocluye
+        /// o desaparece, y sustituye las ranuras de material de los que ocluyen. Sobre las 533
+        /// entidades del modelo eso son varios centenares de renderers y otras tantas
+        /// asignaciones de <c>sharedMaterials</c>, cada una de las cuales rehace el vínculo del
+        /// renderer con el material. Hecho de una vez es una parada larga justo cuando el
+        /// usuario acaba de elegir modo, es decir, cuando está esperando una respuesta.
+        ///
+        /// La clasificación y la sustitución se mantienen en DOS pasadas, como estaban: la
+        /// segunda necesita saber ya cuáles son los oclusores. Repartir no cambia el resultado
+        /// porque ningún renderer se lee después de haberse escrito.
+        ///
+        /// Mientras esto ocurre la pantalla de carga tiene restringida la máscara de cultivo de
+        /// la cámara, así que el usuario NO ve el modelo a medio vestir. Sin esa restricción,
+        /// repartir este trabajo habría empeorado lo que arregla: el edificio virtual opaco
+        /// apareciendo por trozos encima de la sala real.
+        /// </summary>
+        public static IEnumerator AplicarIncremental(SceneModelIndex index,
+                                                     System.Action<float> progreso,
+                                                     System.Action<bool> resultado)
+        {
+            var presupuesto = new PresupuestoDeFotograma();
+
             var shader = Resources.Load<Shader>(RutaShaderOclusor);
             if (shader == null)
             {
@@ -67,7 +102,8 @@ namespace DigitalTwin.MR
                                $"Resources/{RutaShaderOclusor}. El modo anclado se queda SIN " +
                                "oclusores y con la geometria visible: revisa que el fichero " +
                                "Assets/Resources/MR/OclusorProfundidad.shader exista y compile.");
-                return false;
+                resultado?.Invoke(false);
+                yield break;
             }
 
             // Identidad del sombreador en el registro: si el dispositivo lo ha sustituido por el
@@ -80,7 +116,8 @@ namespace DigitalTwin.MR
                 Debug.LogError("[DigitalTwin][AR] El sombreador de oclusion NO esta soportado en " +
                                "este dispositivo (variantes sin compilar o etapa incompatible). " +
                                "No se aplica la oclusion: la geometria se queda visible.");
-                return false;
+                resultado?.Invoke(false);
+                yield break;
             }
 
             var materialOclusor = new Material(shader) { name = "~OclusorProfundidad" };
@@ -91,8 +128,11 @@ namespace DigitalTwin.MR
             var renderersOclusores = new List<Renderer>();
             int sensoresVisibles = 0;
 
-            foreach (var renderer in Object.FindObjectsByType<Renderer>(FindObjectsSortMode.None))
+            var todos = Object.FindObjectsByType<Renderer>(FindObjectsSortMode.None);
+            for (int i = 0; i < todos.Length; i++)
             {
+                var renderer = todos[i];
+
                 // Solo geometría identificada del modelo. Los renderers sin IfcMetadata en su
                 // ascendencia son decorado del sistema (rayo de los mandos, línea del panel,
                 // lienzos) o raíces sin entidad, y no se tocan.
@@ -126,6 +166,15 @@ namespace DigitalTwin.MR
                         col.enabled = false;
                     elementosOcultados.Add(meta);
                 }
+
+                if (presupuesto.Agotado)
+                {
+                    // La clasificación se lleva la mitad de la barra de esta fase; la
+                    // sustitución de materiales, la otra mitad.
+                    progreso?.Invoke(0.5f * (i + 1) / todos.Length);
+                    yield return null;
+                    presupuesto.Reiniciar();
+                }
             }
 
             // El material de solo-profundidad se aplica DESDE EL PRIMER FOTOGRAMA del modo
@@ -133,15 +182,24 @@ namespace DigitalTwin.MR
             // sustituyen TODAS las ranuras conservando su número: una malla con dos
             // submateriales que recibiera uno solo dejaría una submalla sin dibujar.
             int renderersCambiados = 0;
-            foreach (var r in renderersOclusores)
+            for (int i = 0; i < renderersOclusores.Count; i++)
             {
+                var r = renderersOclusores[i];
                 if (r == null) continue;
                 int ranuras = r.sharedMaterials.Length;
                 var materiales = new Material[ranuras];
-                for (int i = 0; i < ranuras; i++) materiales[i] = materialOclusor;
+                for (int k = 0; k < ranuras; k++) materiales[k] = materialOclusor;
                 r.sharedMaterials = materiales;
                 renderersCambiados++;
+
+                if (presupuesto.Agotado)
+                {
+                    progreso?.Invoke(0.5f + 0.5f * (i + 1) / renderersOclusores.Count);
+                    yield return null;
+                    presupuesto.Reiniciar();
+                }
             }
+            progreso?.Invoke(1f);
 
             Debug.LogWarning($"[DigitalTwin][AR] Modo anclado: clasificacion aplicada. " +
                              $"{elementosOclusores.Count} elementos oclusores " +
@@ -156,7 +214,7 @@ namespace DigitalTwin.MR
             Object.DontDestroyOnLoad(vigilanciaGo);
             vigilanciaGo.AddComponent<MRVigilanciaCamaraAnclado>().Iniciar();
 
-            return true;
+            resultado?.Invoke(true);
         }
     }
 

@@ -172,8 +172,10 @@ namespace DigitalTwin.MR
             // debe partirlo por la mitad.
             var material = MRIndicadoresDestino.MaterialSiempreVisible();
 
+            // Misma opacidad que la ficha de activos y que el resto de superficies del
+            // visor: ver MROpacidadInterfaz, donde vive la cifra y la cuenta que la sostiene.
             var fondo = DigitalTwin.UI.RuntimeUIFactory.CreatePanel(_raiz, "Fondo",
-                new Color(0.05f, 0.06f, 0.08f, 0.94f));
+                MROpacidadInterfaz.ColorDeFondo);
             DigitalTwin.UI.RuntimeUIFactory.StretchToParent((RectTransform)fondo.transform);
             if (material != null) fondo.material = material;
 

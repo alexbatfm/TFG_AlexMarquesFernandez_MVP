@@ -104,7 +104,12 @@ namespace DigitalTwin.MR
         private const float AnguloReubicarPanel = 60f;
         private const float SegundosFueraAntesDeReubicar = 0.8f;
 
-        private static readonly Color FondoPanel = new Color(0.05f, 0.06f, 0.08f, 0.94f);
+        // Este panel iba a 0,94 y el resto del visor a 0,91 o 0,92. Entra en el criterio
+        // uniforme (MROpacidadInterfaz) porque se abre junto al menú del modo anclado, y ahí
+        // la diferencia se ve sobre un vídeo de cámaras claro. El precio queda anotado: el
+        // contraste de su texto normal baja de 5,13:1 a 4,22:1 en el peor caso, y la
+        // corrección de eso es el color del texto, no la opacidad del fondo.
+        private static readonly Color FondoPanel = MROpacidadInterfaz.ColorDeFondo;
         private static readonly Color FondoBoton = new Color(1f, 1f, 1f, 0.08f);
         private static readonly Color FondoBotonSenalado = new Color(1f, 0.82f, 0.2f, 0.35f);
         private static readonly Color FondoBotonInactivo = new Color(1f, 1f, 1f, 0.03f);

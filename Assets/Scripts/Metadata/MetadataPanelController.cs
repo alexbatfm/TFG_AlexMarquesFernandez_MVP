@@ -202,9 +202,11 @@ namespace DigitalTwin.Metadata
         /// escribe alfa bajo el texto, y ese alfa es lo que el compositor del visor usa para
         /// mezclar con la cámara: 0,55 dejaba pasar entre el 45 % y el 70 % del vídeo (según la
         /// convención de mezcla del shader de UI) y el panel no se leía delante de una sala
-        /// iluminada (sesión del 17-08). Desde entonces el visor usa 1,0 —opaco—, que es el único
-        /// valor cuyo resultado no depende de la convención; 0,92 es el mínimo que aún garantiza
-        /// contraste sobre blanco. Ver el comentario en MRDigitalTwinBootstrap.MontarComun.
+        /// iluminada (sesión del 17-08). El visor usa 0,92, que sobre un vídeo blanco saturado
+        /// deja el texto blanco a 5,06:1 y cumple el umbral de 4,5:1 de WCAG 2.1 AA que toma
+        /// como referencia RNF-07. La cifra, y la cuenta entera, viven en un único sitio:
+        /// DigitalTwin.MR.MROpacidadInterfaz. Quien llama desde el visor es
+        /// MRDigitalTwinBootstrap.MontarComun.
         /// </summary>
         public void SetOpacidadFondo(float alfa)
         {
@@ -269,6 +271,10 @@ namespace DigitalTwin.Metadata
             _panelRoot.anchoredPosition = Vector2.zero;
             _panelRoot.sizeDelta = new Vector2(PanelWidth, 0);
 
+            // Valor de ESCRITORIO, donde el fondo del panel se dibuja sobre la escena y no
+            // sobre vídeo de cámaras. El visor lo sobrescribe en el arranque con
+            // MROpacidadInterfaz.FondoDePanel; que las dos cifras coincidan hoy es
+            // circunstancial y no debe leerse como un acoplamiento.
             _fondo = RuntimeUIFactory.CreatePanel(_panelRoot, "Background", new Color(0.05f, 0.06f, 0.08f, 0.92f));
             var bgRect = (RectTransform)_panelRoot.Find("Background");
             RuntimeUIFactory.StretchToParent(bgRect);

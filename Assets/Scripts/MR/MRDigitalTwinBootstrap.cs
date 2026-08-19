@@ -65,7 +65,88 @@ namespace DigitalTwin.MR
 
         /// <summary>Raíz del modelo apagada mientras el selector de modo está en pantalla;
         /// MontarGemelo la reactiva. Null si no se apagó (vía de emergencia o raíz no hallada).</summary>
-        private static GameObject _raizModeloApagadaDuranteSelector;
+        internal static GameObject _raizModeloApagadaDuranteSelector;
+
+        /// <summary>
+        /// Fases del arranque de la escena, con el texto que ve el usuario y el peso que ocupan
+        /// en la barra.
+        ///
+        /// LOS PESOS SALEN DE UNA MEDIDA, NO DE UNA IMPRESIÓN. En el registro del visor de la
+        /// sesión del 2026-08-18 (01:15:04,515 → 01:15:05,669) el arranque se reparte así:
+        /// índice del modelo 3 ms, colisionadores 71 ms, modelos de los mandos 29 ms, y una
+        /// espera de 1,03 s hasta que la capa de transparencia queda creada. La espera es, con
+        /// diferencia, la parte mayor de lo que el usuario aguarda, así que es la parte mayor de
+        /// la barra: una barra ponderada por trabajo de CPU llegaría al 100 % en la primera
+        /// décima y se quedaría ahí un segundo, que es la forma más eficaz de que una barra
+        /// mienta. Y esa fase, además, es la única cuyo avance se conoce con exactitud, porque
+        /// es un contador de fotogramas (<c>MRPassthroughController.FraccionDeEsperaInicial</c>).
+        /// </summary>
+        internal static FaseDeArranque[] FasesDeEscena()
+        {
+            return new[]
+            {
+                new FaseDeArranque("indice", "Leyendo el modelo del edificio", 5f),
+                new FaseDeArranque("colisionadores", "Preparando la geometría", 75f),
+                new FaseDeArranque("mandos", "Buscando los mandos", 30f),
+                new FaseDeArranque("camara", "Encendiendo la cámara del visor", 900f),
+            };
+        }
+
+        /// <summary>
+        /// Perfil de la vuelta al selector: desmontaje y recarga de escena MÁS las fases del
+        /// arranque que viene después. Se declaran juntas a propósito, para que la barra no
+        /// vuelva a cero a mitad de espera cuando el arranque tome el relevo.
+        ///
+        /// Los pesos de la segunda mitad son menores que en un arranque en frío porque la
+        /// recarga no paga el cocinado de las mallas: el mismo registro del 18-08 mide 71 ms de
+        /// colisionadores en el primer arranque y 13 ms en el segundo, con las mallas ya en
+        /// caché de PhysX.
+        /// </summary>
+        internal static FaseDeArranque[] FasesDeRecarga()
+        {
+            return new[]
+            {
+                new FaseDeArranque("desmontaje", "Cerrando la sesión", 10f),
+                new FaseDeArranque("escena", "Recargando la escena", 80f),
+                new FaseDeArranque("indice", "Leyendo el modelo del edificio", 5f),
+                new FaseDeArranque("colisionadores", "Preparando la geometría", 20f),
+                new FaseDeArranque("mandos", "Buscando los mandos", 5f),
+                new FaseDeArranque("camara", "Encendiendo la cámara del visor", 1000f),
+            };
+        }
+
+        /// <summary>
+        /// Fases del montaje del gemelo, una vez elegido modo. Pesos calibrados con el mismo
+        /// registro: entre la traza de «Montaje del gemelo digital iniciado» (01:15:08,027) y la
+        /// de «Bootstrap de Realidad Aumentada completo» (01:15:08,410) pasan 383 ms, de los que
+        /// 311 corresponden a las piezas comunes —ficha de activos y middleware de sensores— y
+        /// el resto a la navegación y los menús. El modo anclado añade dos fases propias.
+        /// </summary>
+        internal static FaseDeArranque[] FasesDeMontaje(ModoAR modo)
+        {
+            if (modo == ModoAR.Anclado)
+            {
+                return new[]
+                {
+                    new FaseDeArranque("camaraConfirmada", "Esperando la cámara del visor", 60f),
+                    new FaseDeArranque("geometria", "Colocando el modelo", 15f),
+                    new FaseDeArranque("anclaje", "Preparando el anclaje al edificio", 40f),
+                    new FaseDeArranque("panel", "Preparando la ficha de activos", 130f),
+                    new FaseDeArranque("sensores", "Conectando con los sensores", 70f),
+                    new FaseDeArranque("oclusion", "Ajustando el modelo al edificio real", 80f),
+                    new FaseDeArranque("menus", "Preparando los menús", 40f),
+                };
+            }
+
+            return new[]
+            {
+                new FaseDeArranque("geometria", "Colocando el modelo", 15f),
+                new FaseDeArranque("panel", "Preparando la ficha de activos", 130f),
+                new FaseDeArranque("sensores", "Conectando con los sensores", 70f),
+                new FaseDeArranque("navegacion", "Cargando el grafo de navegación", 110f),
+                new FaseDeArranque("menus", "Preparando los menús", 55f),
+            };
+        }
 
         public static bool EsEscenaMR()
         {
@@ -97,26 +178,54 @@ namespace DigitalTwin.MR
             }
 
             // --- Etapa A: lo imprescindible para poder preguntar -------------------------------
+            //
+            // SOLO SE CREA AQUÍ LO QUE NO PUEDE ESPERAR AL SIGUIENTE FOTOGRAMA: el monitor de
+            // rendimiento, la pantalla de carga (que tiene que estar en el primer fotograma que
+            // se dibuje, o vuelve a existir el intervalo indefinido que viene a cubrir), el
+            // controlador de transparencia y el diagnóstico de composición. Todo lo demás —el
+            // índice, los colisionadores, los mandos— pasa a la corrutina del secuenciador y se
+            // reparte entre fotogramas.
+            //
+            // POR QUÉ SE REPARTE. En la sesión del 18-08 esta etapa ocupaba 112 ms dentro de un
+            // único fotograma (71 de ellos en los 351 MeshCollider). A los 90 Hz que el dispositivo declara en el propio registro
+            // (<c>RefreshRate change: 90.0</c>) eso son diez fotogramas sin entregar: el compositor de OpenXR reproyecta el último disponible,
+            // la imagen deja de seguir a la cabeza y aparece el desacople visual-vestibular que
+            // produce el malestar. Enseñar un panel encima no lo arregla; repartir el trabajo,
+            // sí.
+            //
+            // EL ORDEN DE LA TRANSPARENCIA NO CAMBIA. La capa se sigue creando 90 fotogramas
+            // después de que arranque su Start (ver MRPassthroughController y la violación de
+            // segmento del 13-08), y su Start sigue corriendo al final de ESTE fotograma. Lo
+            // único que cambia es que su Crear() ahora se ejecuta antes que los colisionadores
+            // en lugar de después, dentro del mismo fotograma: el contador de 90 no se entera.
+            // El reparto de la etapa A debe terminar holgadamente dentro de esos 90 fotogramas,
+            // porque la premisa de la espera es que la capa se pida con el motor ya tranquilo;
+            // el secuenciador lo comprueba y lo denuncia si deja de cumplirse.
 
-            // El monitor de rendimiento nace ANTES que todo lo demás: en la prueba del 14-08 la
-            // única medición arrancaba con el gemelo montado y la fase del selector —donde
-            // también se notaban tirones— quedó sin números.
             MRPerfMonitor.Crear();
 
-            var index = SceneModelIndex.Build();
-            ColliderBootstrapper.Setup(index);
+            // Perfil de fases. «SiProcede» y no «Comenzar» porque la vuelta al selector declara
+            // un perfil más largo que ya incluye estas fases (ver FasesDeRecarga).
+            ProgresoDeArranque.ComenzarSiProcede("arranque", FasesDeEscena());
 
-            // Resumen del índice a nivel de aviso: la línea detallada de SceneModelIndex es un
-            // mensaje informativo y las compilaciones que no son de desarrollo lo filtran del
-            // registro del dispositivo.
-            Debug.LogWarning($"[DigitalTwin][AR] Indice del modelo: {index.AllElements.Count} " +
-                             $"elementos, {index.NavPoints.Count} puntos de navegacion, " +
-                             $"{index.Sensors.Count} sensores.");
+            var pantalla = MRPantallaDeCarga.Abrir();
+            // Tras una recarga de escena la cámara es otra: la pantalla vuelve a tomarla y a
+            // colocarse delante del usuario. Si acaba de crearse, no hace nada.
+            pantalla.ReanclarTrasRecarga();
 
             // La transparencia se prepara antes que el resto. El orden importa poco para el
             // resultado, pero mucho para diagnosticar: si algo falla al crear la capa, el aviso
             // aparece antes que las trazas de montaje y no queda sepultado.
             MRPassthroughController.Crear();
+
+            // La pantalla de carga ya ha cambiado el borrado de la cámara para enseñar un fondo
+            // neutro mientras no hay vídeo. Se le entregan al controlador los valores de ANTES
+            // de ese cambio, que son los que debe reponer si algún día apaga la transparencia
+            // —lo que hace el modo de navegación por nodos al entrar—. Sin esto, ese modo se
+            // quedaría con el fondo de la pantalla de carga en lugar del cielo de la escena.
+            if (MRPassthroughController.Instancia != null)
+                MRPassthroughController.Instancia.AdoptarAjustesDeCamaraPrevios(
+                    pantalla.BorradoOriginal, pantalla.FondoOriginal);
 
             // Diagnóstico de la composición (ronda 10, 17-08): SOLO LEE. Mide el modo de mezcla,
             // la pila de capas de cada xrEndFrame, el formato del objetivo de color que URP elige
@@ -124,62 +233,9 @@ namespace DigitalTwin.MR
             // ni toca la capa de transparencia; sus trazas llevan [DigitalTwin][AR][Compos].
             MRDiagnosticoComposicion.Crear();
 
-            // Los anclajes de los mandos cuelgan del desplazamiento de camara, no de la raiz de la
-            // escena: las poses que entrega el sistema estan en el espacio del origen de realidad
-            // extendida, y colgarlas de la raiz haria que los mandos se despegaran de las manos en
-            // cuanto el origen se moviera, por ejemplo al desplazarse a un punto de navegacion.
-            Transform desplazamientoCamara = Camera.main.transform.parent;
-            Transform origenXR = desplazamientoCamara != null ? desplazamientoCamara.parent : null;
-
-            if (desplazamientoCamara == null || origenXR == null)
-            {
-                // Sin la jerarquía del rig no hay mandos, y sin mandos no se puede elegir modo.
-                // Antes que dejar al usuario ante un selector inoperante, se monta directamente
-                // la navegación por nodos —el modo que funciona sin anclaje— dejando constancia.
-                Debug.LogError("[DigitalTwin][AR] La camara no cuelga de la jerarquia esperada " +
-                               "(origen de realidad extendida > desplazamiento de camara > camara). " +
-                               "Sin mandos no hay selector de modo: se monta navegacion por nodos " +
-                               "directamente. Revisa el rig de la escena.");
-                MontarGemelo(ModoAR.NavegacionPorNodos, index, null, null, null);
-                _initialized = true;
-                return;
-            }
-
-            // Seguimiento a nivel de suelo, verificado y nunca supuesto: la escena lo pide
-            // (XROrigin en modo Floor con desplazamiento cero desde el 15-08), pero el modo
-            // efectivo lo decide el runtime y aquí se comprueba, se registra y, si no se
-            // consigue, se compensa con una degradación declarada.
-            AsegurarSeguimientoANivelDeSuelo(origenXR);
-
-            var rigGo = new GameObject("~MandosAR");
-            rigGo.transform.SetParent(desplazamientoCamara, false);
-            var rig = rigGo.AddComponent<MRControllerRig>();
-            rig.Initialize(desplazamientoCamara);
-
-            // Mientras el usuario elige modo, el gemelo no aporta nada y SÍ cuesta: el modelo
-            // entero se estaba dibujando detrás de las tarjetas del selector (en estéreo y a
-            // resolución de visor) sin que se viera más que el vídeo de la sala. Se apaga la
-            // raíz completa y MontarGemelo la reactiva. La vía de emergencia de arriba (sin
-            // rig) no pasa por aquí a propósito: monta directamente y no debe apagarse nada.
-            var raizModelo = RaizDelModelo(index);
-            if (raizModelo != null)
-            {
-                raizModelo.SetActive(false);
-                _raizModeloApagadaDuranteSelector = raizModelo;
-                Debug.LogWarning($"[DigitalTwin][AR] Raiz del modelo '{raizModelo.name}' " +
-                                 "desactivada mientras el selector de modo este en pantalla.");
-            }
-            else
-            {
-                Debug.LogWarning("[DigitalTwin][AR] No se ha resuelto la raiz del modelo; se " +
-                                 "deja el gemelo dibujandose durante el selector (solo cuesta " +
-                                 "rendimiento, no funcionalidad).");
-            }
-
             var arranqueGo = new GameObject("~ArranqueDiferidoAR");
             Object.DontDestroyOnLoad(arranqueGo);
-            var secuenciador = arranqueGo.AddComponent<MRBootSequencer>();
-            secuenciador.Iniciar(index, rig, desplazamientoCamara, origenXR);
+            arranqueGo.AddComponent<MRBootSequencer>().Iniciar();
 
             _initialized = true;
         }
@@ -198,7 +254,7 @@ namespace DigitalTwin.MR
         /// una persona de pie; y si el dispositivo no admitiera el modo de suelo, se aplica la
         /// misma elevación —la estatura real no es conocible en ese modo— dejándolo dicho.
         /// </summary>
-        private static void AsegurarSeguimientoANivelDeSuelo(Transform origenXR)
+        internal static void AsegurarSeguimientoANivelDeSuelo(Transform origenXR)
         {
             var subsistemas = new List<XRInputSubsystem>();
             SubsystemManager.GetSubsystems(subsistemas);
@@ -248,7 +304,7 @@ namespace DigitalTwin.MR
         /// metadatos hasta el objeto más alto. No se codifica el nombre del objeto del .glb,
         /// que puede cambiar al reimportar.
         /// </summary>
-        private static GameObject RaizDelModelo(SceneModelIndex index)
+        internal static GameObject RaizDelModelo(SceneModelIndex index)
         {
             if (index == null || index.AllElements.Count == 0 || index.AllElements[0] == null)
                 return null;
@@ -287,6 +343,17 @@ namespace DigitalTwin.MR
 
             Debug.LogWarning($"[DigitalTwin][AR] Montaje del gemelo digital iniciado (modo {modo}).");
 
+            // La pantalla de carga vuelve a ponerse: entre elegir modo y tener el gemelo montado
+            // hay trabajo real —383 ms medidos el 18-08— y hasta ahora transcurría dentro de un
+            // único fotograma, justo en el instante en que el usuario acaba de disparar y espera
+            // respuesta. Además de cubrir la espera, la pantalla restringe la máscara de cultivo
+            // de la cámara, y eso resuelve un problema que el reparto habría creado: en modo
+            // anclado la geometría se reactiva antes de vestirse de oclusor, y sin la máscara el
+            // usuario vería el edificio virtual opaco encima de su sala real mientras se cambian
+            // los materiales.
+            MRPantallaDeCarga.Abrir();
+            ProgresoDeArranque.Comenzar("montaje " + modo, FasesDeMontaje(modo));
+
             if (modo == ModoAR.Anclado)
             {
                 // El modelo sigue apagado mientras se confirma la transparencia: sin vídeo, un
@@ -295,6 +362,8 @@ namespace DigitalTwin.MR
                 // la entrega al montaje real cuando el vídeo se confirma.
                 if (MRPerfMonitor.Instancia != null)
                     MRPerfMonitor.Instancia.FijarFase("esperando transparencia (Anclado)");
+
+                ProgresoDeArranque.EntrarEnFase("camaraConfirmada");
 
                 var guardianGo = new GameObject("~ArranqueAnclado");
                 Object.DontDestroyOnLoad(guardianGo);
@@ -305,76 +374,27 @@ namespace DigitalTwin.MR
                 return;
             }
 
-            // --- Navegación por nodos: el flujo de siempre, sin cambios de comportamiento -----
-
             if (MRPerfMonitor.Instancia != null)
                 MRPerfMonitor.Instancia.FijarFase($"montado ({modo})");
 
-            ReactivarRaiz(_raizModeloApagadaDuranteSelector);
+            LanzarMontaje(ModoAR.NavegacionPorNodos, index, rig, desplazamientoCamara, origenXR,
+                          _raizModeloApagadaDuranteSelector);
             _raizModeloApagadaDuranteSelector = null;
+        }
 
-            // En navegación por nodos un anclaje persistido de una sesión anterior movería el
-            // edificio entero bajo los pies del usuario a mitad de recorrido, que es exactamente
-            // lo contrario de lo que ese modo promete (el modelo quieto y el usuario saltando
-            // entre nodos): el servicio de anclaje no se crea.
-            Debug.LogWarning("[DigitalTwin][AR] Anclaje espacial no aplicable en navegacion " +
-                             "por nodos: el modelo permanece en su pose de autor.");
-
-            var panel = MontarComun(index, out var colocador);
-
-            // La transparencia se apaga al entrar: la revisión remota se hace desde la
-            // oficina, y el vídeo de la sala real detrás del modelo solo confunde. No se
-            // persiste la preferencia: al próximo arranque el selector vuelve a mostrarse
-            // sobre transparencia.
-            if (MRPassthroughController.Instancia != null)
-                MRPassthroughController.Instancia.Aplicar(false);
-
-            MRNodeNavigator navegador = null;
-            MRMenuZonas menuZonas = null;
-
-            if (origenXR == null)
-            {
-                // Vía de emergencia sin jerarquía de rig: sin origen de realidad extendida
-                // no hay a qué aplicar los desplazamientos, así que la navegación queda
-                // contemplativa. Ya quedó registrado el error de jerarquía más arriba.
-                Debug.LogError("[DigitalTwin][AR] Sin origen de realidad extendida no se " +
-                               "monta la navegacion por nodos: no habria a que aplicar los " +
-                               "desplazamientos.");
-            }
-            else
-            {
-                var indicadoresGo = new GameObject("~IndicadoresDestinoAR");
-                Object.DontDestroyOnLoad(indicadoresGo);
-                var indicadores = indicadoresGo.AddComponent<MRIndicadoresDestino>();
-                indicadores.Initialize(Camera.main);
-
-                var navegadorGo = new GameObject("~NavegacionPorNodosAR");
-                Object.DontDestroyOnLoad(navegadorGo);
-                navegador = navegadorGo.AddComponent<MRNodeNavigator>();
-                navegador.Initialize(origenXR, Camera.main, index, indicadores);
-                navegador.ColocarEnNodoInicial();
-
-                // El menú del modo de navegación (zonas, iluminación solar, volver al
-                // selector). Solo con mandos: sin rig no habría forma de abrirlo ni de elegir.
-                if (rig != null)
-                {
-                    var menuGo = new GameObject("~MenuZonasARRaiz");
-                    Object.DontDestroyOnLoad(menuGo);
-                    menuZonas = menuGo.AddComponent<MRMenuZonas>();
-                    menuZonas.Initialize(rig, Camera.main, navegador, index);
-                }
-                else
-                {
-                    Debug.LogWarning("[DigitalTwin][AR] Sin rig de mandos no se crea el " +
-                                     "menu: no habria boton con que abrirlo.");
-                }
-            }
-
-            CrearInteraccion(rig, desplazamientoCamara, panel, colocador, navegador, index,
-                             menuZonas, colocacionAnclaje: null, identificarSenalado: false);
-
-            Debug.LogWarning($"[DigitalTwin][AR] Bootstrap de Realidad Aumentada completo " +
-                             $"(modo {modo}).");
+        /// <summary>
+        /// Crea el objeto que ejecuta el montaje como corrutina. El montaje dejó de ser una
+        /// llamada síncrona cuando se repartió entre fotogramas; esto es lo único que queda de
+        /// aquella llamada.
+        /// </summary>
+        private static void LanzarMontaje(ModoAR modo, SceneModelIndex index, MRControllerRig rig,
+                                          Transform desplazamientoCamara, Transform origenXR,
+                                          GameObject raizApagada)
+        {
+            var go = new GameObject("~MontajeGemeloAR");
+            Object.DontDestroyOnLoad(go);
+            go.AddComponent<MRMontajeGemelo>()
+              .Iniciar(modo, index, rig, desplazamientoCamara, origenXR, raizApagada);
         }
 
         /// <summary>
@@ -402,75 +422,7 @@ namespace DigitalTwin.MR
             if (MRPerfMonitor.Instancia != null)
                 MRPerfMonitor.Instancia.FijarFase("montado (Anclado)");
 
-            ReactivarRaiz(raizApagada);
-
-            MRColocacionAnclaje colocacion = null;
-            var anclajeGo = new GameObject("~MRAnchorService");
-            Object.DontDestroyOnLoad(anclajeGo);
-            var anclaje = anclajeGo.AddComponent<MRAnchorService>();
-
-            var binder = anclajeGo.AddComponent<ModelAnchorBinder>();
-            binder.Initialize(index, anclaje, origenXR);
-
-            anclaje.OnEstadoCambiado += estado =>
-                Debug.LogWarning($"[DigitalTwin][MR] Estado del anclaje: {estado}.");
-
-            if (rig != null && binder.RaizModelo != null)
-            {
-                var colocacionGo = new GameObject("~ColocacionAnclajeAR");
-                Object.DontDestroyOnLoad(colocacionGo);
-                colocacion = colocacionGo.AddComponent<MRColocacionAnclaje>();
-                colocacion.Initialize(rig, Camera.main, index, anclaje, binder, origenXR);
-
-                // La leyenda del mando nace en la etapa A con los controles de navegación; en
-                // anclado el gatillo también toma puntos y A/X abre el menú (desde la ronda 9
-                // el mismo gesto que en navegación; el panel de anclaje se reabre desde él).
-                rig.FijarLeyenda("Gatillo · seleccionar / tomar punto\n" +
-                                 "A o X · menu\n" +
-                                 "Joystick · desplazar la ficha");
-            }
-            else
-            {
-                Debug.LogError("[DigitalTwin][AR] Sin rig de mandos o sin raiz de modelo no se crea la " +
-                               "interfaz de colocacion: el anclaje solo podra restaurarse, nunca crearse.");
-            }
-
-            var panel = MontarComun(index, out var colocador);
-
-            // La geometría pasa a oclusor invisible o desaparece (solo-profundidad desde el
-            // primer fotograma; el canario de revelado verde se retiró el 15-08 tras cumplir su
-            // función diagnóstica) y los marcadores quedan fuera de la selección.
-            MROcclusionService.Aplicar(index);
-            ColliderBootstrapper.ExcluirPuntosDeNavegacionDeLaSeleccion(index);
-
-            // Menú del modo anclado (ronda 9): mismo gesto y misma forma que el menú de
-            // navegación, para que se aprenda una sola vez. NO contiene zonas —aquí el
-            // desplazamiento es físico y un teletransporte desincronizaría la vista del
-            // cuerpo, la misma razón por la que este modo no ofrece puntos de navegación—;
-            // aloja el panel de anclaje, rehacer el anclaje y la vuelta al selector de modo.
-            MRMenuAnclado menuAnclado = null;
-            if (rig != null)
-            {
-                var menuAncladoGo = new GameObject("~MenuAncladoARRaiz");
-                Object.DontDestroyOnLoad(menuAncladoGo);
-                menuAnclado = menuAncladoGo.AddComponent<MRMenuAnclado>();
-                menuAnclado.Initialize(rig, Camera.main, colocacion);
-            }
-            else
-            {
-                Debug.LogWarning("[DigitalTwin][AR] Sin rig de mandos no se crea el menu del " +
-                                 "modo anclado: no habria boton con que abrirlo.");
-            }
-
-            // La etiqueta de señalado solo existe en anclado: con los oclusores invisibles y en
-            // un entorno oscuro es la única respuesta continua a «qué estoy señalando» que no
-            // exige disparar ni depende de la iluminación de la sala.
-            CrearInteraccion(rig, desplazamientoCamara, panel, colocador, navegador: null,
-                             index: index, menuZonas: null, colocacionAnclaje: colocacion,
-                             identificarSenalado: true, menuAnclado: menuAnclado);
-
-            Debug.LogWarning("[DigitalTwin][AR] Bootstrap de Realidad Aumentada completo " +
-                             "(modo Anclado).");
+            LanzarMontaje(ModoAR.Anclado, index, rig, desplazamientoCamara, origenXR, raizApagada);
         }
 
         /// <summary>
@@ -479,9 +431,12 @@ namespace DigitalTwin.MR
         /// Extraído de MontarGemelo el 15-08 al dividirse el montaje anclado; contenido y orden
         /// son los que tenía dentro del método.
         /// </summary>
-        private static MetadataPanelController MontarComun(SceneModelIndex index,
-                                                           out WorldPanelPlacer colocador)
+        internal static IEnumerator MontarComunIncremental(SceneModelIndex index,
+            System.Action<MetadataPanelController, WorldPanelPlacer> alTerminar)
         {
+            WorldPanelPlacer colocador;
+            ProgresoDeArranque.EntrarEnFase("panel");
+
             // El panel de metadatos y el middleware IoT reutilizan la misma implementación que en
             // escritorio; lo único que cambia es dónde vive el panel. Aquí el canvas es de tipo
             // world-space: en un visor, una interfaz pegada a la cara resulta incómoda y rompe la
@@ -517,26 +472,22 @@ namespace DigitalTwin.MR
             // Los gestos del panel, dichos en el propio panel (segundo disparo cierra,
             // conjuntos desplegables, joystick desplaza): eran funciones implementadas y mudas.
             panel.UsarAyudaDeVisor();
-            // Fondo OPACO (alfa 1,0). Hasta el 17-08 iba a 0,55 «para dar sensación de espacio»,
-            // y en la primera sesión con vídeo de transparencia real el panel no se leía delante
-            // de una sala iluminada. La razón es de composición, no de gusto: este lienzo se
-            // dibuja sobre una capa de PROYECCIÓN con alfa (cámara SolidColor alfa 0), y el
-            // compositor del visor mezcla esa capa con el vídeo según el alfa que quede escrito
-            // en cada píxel. Bajo el fondo del panel no hay nada opaco (en anclado la geometría
-            // es solo-profundidad y no escribe color), así que el alfa que llega al compositor
-            // es el del propio fondo —o su cuadrado, según la convención de mezcla que aplique
-            // el shader de UI—: con 0,55 pasaba entre el 45 % y el 70 % del vídeo, y una ventana
-            // al mediodía sobre un fondo (0,05, 0,06, 0,08) deja el texto blanco a ~2:1 de
-            // contraste. Con 1,0 el fondo escribe alfa 1 se aplique la convención que se aplique
-            // y no pasa nada del vídeo (contraste texto/fondo ≈ 9:1, el del propio panel). Es el
-            // único valor cuyo resultado no depende de cómo componga el runtime.
+            // Opacidad del fondo de la ficha. La cifra, y el razonamiento de composición que
+            // la sostiene, viven en MROpacidadInterfaz: el fondo del panel es la única
+            // superficie que escribe alfa bajo el texto, y ese alfa es el que el compositor
+            // usa para mezclar con el vídeo de las cámaras. Aquí solo se aplica, porque el
+            // mismo valor lo comparten el menú de zonas, el menú del modo anclado y el panel
+            // de colocación del anclaje, y estaba escrito cuatro veces.
             //
-            // El alfa es por píxel: sube solo donde el fondo del panel pinta (su rectángulo en
-            // el lienzo de mundo). El resto de la escena sigue con la cámara a alfa 0 y los
-            // oclusores sin color, así que la transparencia fuera del panel no cambia. Si algún
-            // día se quiere recuperar algo de translucidez, el mínimo que sigue leyéndose sobre
-            // blanco es 0,92 (≈ 5,7:1 en la peor convención); por debajo, no.
-            panel.SetOpacidadFondo(0.91f);
+            // El escritorio no pasa por aquí: allí el fondo del panel lo pone la propia
+            // escena y el problema no existe.
+            panel.SetOpacidadFondo(MROpacidadInterfaz.FondoDePanel);
+
+            // Cesión de fotograma. La construcción de la ficha de activos es la pieza más cara
+            // del montaje y NO se puede subdividir sin reescribir MetadataPanelController, que
+            // construye su interfaz entera en Initialize. Queda medida en el informe de
+            // arranque: si domina el resto, es la siguiente pieza a atacar.
+            yield return null;
 
             // Identificación del elemento seleccionado, por triple vía: caja de aristas y tinte
             // sobre el objeto, panel colocado ante el usuario, y línea que une panel y objeto.
@@ -563,18 +514,23 @@ namespace DigitalTwin.MR
                 colocadorLocal.Seguir(null);
             };
 
+            yield return null;
+
             // Mismo criterio que en escritorio: disponible pero apagada por defecto.
             Visual.SolarLightingController.Crear();
+            yield return null;
+
+            ProgresoDeArranque.EntrarEnFase("sensores");
 
             IoT.SensorIntegrationBootstrap.TryAttach(index, panel, tipografiaDeVisor: true);
 
-            return panel;
+            alTerminar?.Invoke(panel, colocador);
         }
 
         /// <summary>Devuelve a la escena la raíz del modelo apagada durante el selector (o la
         /// espera de transparencia). Todo lo que se monta después (oclusores, colliders de
         /// selección, sensores) da por hecho que la escena está viva.</summary>
-        private static void ReactivarRaiz(GameObject raiz)
+        internal static void ReactivarRaiz(GameObject raiz)
         {
             if (raiz == null) return;
             raiz.SetActive(true);
@@ -587,7 +543,7 @@ namespace DigitalTwin.MR
         /// pero no había forma de señalar nada. El rig ya existe desde la etapa A (hizo falta
         /// para el selector).
         /// </summary>
-        private static void CrearInteraccion(MRControllerRig rig, Transform desplazamientoCamara,
+        internal static void CrearInteraccion(MRControllerRig rig, Transform desplazamientoCamara,
                                              MetadataPanelController panel, WorldPanelPlacer colocador,
                                              MRNodeNavigator navegador, SceneModelIndex index,
                                              MRMenuZonas menuZonas, MRColocacionAnclaje colocacionAnclaje,
@@ -652,6 +608,14 @@ namespace DigitalTwin.MR
                              "desmonta la sesion, se recarga la escena y se rearranca el " +
                              "bootstrap. El anclaje persistido del visor NO se toca.");
 
+            // La pantalla de carga se pone ANTES de desmontar nada: el desmontaje y la recarga
+            // son exactamente el rato en que la escena está a medias, y con el visor puesto ese
+            // rato no puede quedar a la vista. Sobrevive al barrido (está exceptuada por nombre)
+            // y a la propia recarga, porque es persistente.
+            MRPantallaDeCarga.Abrir();
+            ProgresoDeArranque.Comenzar("recarga", FasesDeRecarga());
+            ProgresoDeArranque.EntrarEnFase("desmontaje");
+
             // 1) Estado estático compartido que sobrevive a la recarga de escena.
             Navigation.PuertaTransparente.Restituir();          // tolera renderers ya destruidos
             ColliderBootstrapper.ReiniciarSeleccionDeSesion();  // deshace la exclusion del anclado
@@ -667,15 +631,26 @@ namespace DigitalTwin.MR
             Debug.LogWarning($"[DigitalTwin][AR] {destruidos} objeto(s) persistente(s) de la " +
                              $"sesion destruidos antes de recargar: {nombres}.");
 
-            // 3) Recarga y rearranque. El manejador se registra ANTES de pedir la carga.
-            SceneManager.sceneLoaded += RearrancarTrasRecarga;
-            SceneManager.LoadScene(escenaActiva);
+            // 3) Recarga y rearranque. La recarga es ASÍNCRONA desde este cambio: la síncrona
+            // medía 58 ms de parada en el registro del 18-08 (01:15:26,683 → 01:15:26,741), es
+            // decir, cinco fotogramas a 90 Hz en los que la imagen deja de responder a la
+            // cabeza. Como el desmontaje ya ha destruido la sesión, esos fotogramas ni siquiera
+            // mostraban nada útil. Con la carga asíncrona el motor la reparte y la pantalla de
+            // carga sigue dibujándose y siguiendo al usuario mientras tanto.
+            var recargaGo = new GameObject("~RecargaEscenaAR");
+            Object.DontDestroyOnLoad(recargaGo);
+            recargaGo.AddComponent<MRRecargaDeEscena>().Iniciar(escenaActiva);
         }
 
-        private static void RearrancarTrasRecarga(Scene escena, LoadSceneMode modo)
+        /// <summary>
+        /// Rearranca el punto de entrada tras una recarga de escena. Lo llama
+        /// <see cref="MRRecargaDeEscena"/> cuando la carga asíncrona ha terminado; antes lo hacía
+        /// el evento <c>sceneLoaded</c>, que con carga asíncrona llegaría igual pero dejaría el
+        /// orden en manos del motor en vez de en las de la corrutina que conduce la recarga.
+        /// </summary>
+        internal static void RearrancarTrasRecarga(string nombreEscena)
         {
-            SceneManager.sceneLoaded -= RearrancarTrasRecarga;
-            Debug.LogWarning($"[DigitalTwin][AR] Escena '{escena.name}' recargada: se rearranca " +
+            Debug.LogWarning($"[DigitalTwin][AR] Escena '{nombreEscena}' recargada: se rearranca " +
                              "el punto de entrada de Realidad Aumentada (RuntimeInitialize solo " +
                              "corre una vez por proceso).");
             Bootstrap();
@@ -698,6 +673,9 @@ namespace DigitalTwin.MR
             foreach (var raiz in sonda.scene.GetRootGameObjects())
             {
                 if (raiz == sonda) continue;
+                // La pantalla de carga lleva el mismo prefijo que el resto, pero es
+                // justamente la que tiene que sobrevivir: su trabajo es cubrir esta recarga.
+                if (raiz.name == MRPantallaDeCarga.NombreObjeto) continue;
                 bool esDeLaSesion = raiz.name.StartsWith("~") || raiz.name == "DigitalTwinCanvasMR";
                 if (!esDeLaSesion) continue;
                 if (lista.Length > 0) lista.Append(", ");
@@ -719,6 +697,20 @@ namespace DigitalTwin.MR
     /// Clase de primer nivel a propósito: los MonoBehaviour anidados funcionan con
     /// AddComponent, pero salirse del patrón del resto del proyecto no compra nada aquí.
     /// </summary>
+    /// <summary>
+    /// Coordina la etapa A del arranque y el paso al selector de modo, repartiendo el trabajo
+    /// entre fotogramas para que el bucle principal no se detenga.
+    ///
+    /// Antes de este cambio la etapa A entera se ejecutaba dentro del método de entrada, es
+    /// decir, en un solo fotograma: 112 ms medidos en el visor el 18-08. Aquí cada pieza tiene
+    /// su fase, cede el fotograma al terminar, y las que son bucles largos (los colisionadores)
+    /// ceden también por dentro con un presupuesto de tiempo.
+    ///
+    /// Es un MonoBehaviour porque necesita corrutinas; vive en su propio objeto para que un
+    /// fallo suyo no arrastre al diagnóstico de entrada. Clase de primer nivel a propósito: los
+    /// MonoBehaviour anidados funcionan con AddComponent, pero salirse del patrón del resto del
+    /// proyecto no compra nada aquí.
+    /// </summary>
     internal class MRBootSequencer : MonoBehaviour
     {
             /// <summary>La capa de transparencia se crea 90 fotogramas despues del arranque (ver
@@ -728,29 +720,289 @@ namespace DigitalTwin.MR
             private const int FotogramasDeEsperaMaxima = 210;
             private const int FotogramasDeMargenTrasReintento = 30;
 
+            /// <summary>
+            /// Fotogramas que la etapa A puede consumir sin comprometer la premisa de la espera
+            /// de la transparencia.
+            ///
+            /// Esa espera de 90 fotogramas existe para que la capa se pida con el motor ya
+            /// tranquilo: pedirla mientras se satura la GPU con la carga de escena terminó en
+            /// violación de segmento del servicio del visor el 13-08. Repartir la etapa A la
+            /// alarga en fotogramas, y si llegara a solaparse con el fotograma 90 estaríamos
+            /// reintroduciendo por la puerta de atrás la concurrencia que aquel retardo evita.
+            /// Con el presupuesto por fotograma y los 112 ms medidos, la etapa A debería caber
+            /// en menos de 20 fotogramas; 60 es un margen amplio que solo se supera si algo ha
+            /// cambiado de verdad. No se corrige sola: se denuncia, porque la corrección
+            /// correcta depende de qué haya crecido.
+            /// </summary>
+            private const int FotogramasSanosDeEtapaA = 60;
+
+            /// <summary>
+            /// GUARDA DEL ARRANQUE. EL SELECTOR DE MODO ES LA ÚNICA ENTRADA A LA APLICACIÓN, y
+            /// por tanto no puede depender de que la etapa A termine bien: cualquier excepción
+            /// dentro de la corrutina (el motor la registra y la corrutina muere sin más), una
+            /// espera que nunca se satisface o una pantalla de carga que no se retira dejarían al
+            /// usuario con el visor puesto y sin nada que hacer, que es exactamente lo que pasó
+            /// el 19-08. Pasado este plazo, si el selector no se ha mostrado, se fuerza con lo
+            /// que haya (el rig puede faltar; el selector lo tolera y avisa), se retira la
+            /// pantalla de carga y se deja en el registro en qué fase se quedó el arranque.
+            ///
+            /// Por qué 15 s: el camino legítimo más largo es la etapa A (1,2 s medidos el 19-08)
+            /// más la espera máxima de la transparencia (210 + 30 fotogramas, unos 2,7 s a
+            /// 90 Hz), es decir, unos 4 s; el selector se ha mostrado a t=5,8 s desde el inicio
+            /// del proceso en las seis sesiones registradas. 15 s es más del triple de ese peor
+            /// caso y queda por debajo de los 20 s a los que el propio selector ya avisa de que
+            /// no hay mando: antes de esa marca el usuario tiene que tener algo delante. La
+            /// pantalla de carga conserva su propia red a 30 s como último recurso.
+            /// </summary>
+            private const float SegundosDeGuarda = 15f;
+
             private SceneModelIndex _index;
             private MRControllerRig _rig;
             private Transform _desplazamientoCamara;
             private Transform _origenXR;
+            private Coroutine _secuencia;
+            private bool _selectorMostrado;
+            private bool _terminadoSinSelector;
 
-            public void Iniciar(SceneModelIndex index, MRControllerRig rig,
-                                Transform desplazamientoCamara, Transform origenXR)
+            public void Iniciar()
             {
-                _index = index;
-                _rig = rig;
-                _desplazamientoCamara = desplazamientoCamara;
-                _origenXR = origenXR;
-                StartCoroutine(Secuencia());
+                _secuencia = StartCoroutine(Secuencia());
+                // La guarda corre en una corrutina APARTE: si la secuencia muere por una
+                // excepción, la guarda sigue viva. Esa independencia es todo el sentido.
+                StartCoroutine(Guarda());
+            }
+
+            private IEnumerator Guarda()
+            {
+                float inicio = Time.unscaledTime;
+                while (Time.unscaledTime - inicio < SegundosDeGuarda)
+                {
+                    if (_selectorMostrado || _terminadoSinSelector) yield break;
+                    yield return null;
+                }
+                if (_selectorMostrado || _terminadoSinSelector) yield break;
+
+                Debug.LogError($"[DigitalTwin][AR] GUARDA DEL ARRANQUE: han pasado {SegundosDeGuarda} s " +
+                               "y el selector de modo no se ha mostrado. Perfil '" +
+                               ProgresoDeArranque.Perfil + "', ultima fase: '" +
+                               ProgresoDeArranque.TextoDeFase + "' (" +
+                               ProgresoDeArranque.Fraccion.ToString("0.00") + "); indice=" +
+                               (_index != null ? "si" : "NO") + ", rig=" +
+                               (_rig != null ? "si" : "NO") + ". Se fuerza el selector y se " +
+                               "retira la pantalla de carga: el arranque ha quedado a medias y " +
+                               "hay que buscar en el registro que fase no termino.");
+
+                if (_secuencia != null) StopCoroutine(_secuencia);
+
+                // Lo que falte se intenta completar con lo mínimo, cada pieza por separado y sin
+                // que el fallo de una impida las demás.
+                if (_index == null)
+                {
+                    try { _index = SceneModelIndex.Build(); }
+                    catch (System.Exception e)
+                    {
+                        Debug.LogError("[DigitalTwin][AR] GUARDA: no se pudo construir el indice " +
+                                       "del modelo: " + e.Message);
+                    }
+                }
+                if (_rig == null)
+                {
+                    try { ResolverJerarquiaYCrearRig(); }
+                    catch (System.Exception e)
+                    {
+                        Debug.LogError("[DigitalTwin][AR] GUARDA: no se pudo crear el rig de " +
+                                       "mandos: " + e.Message + ". El selector se mostrara igual " +
+                                       "y esperara a un mando.");
+                    }
+                }
+
+                MostrarSelectorYRetirarCarga("guarda de " + SegundosDeGuarda + " s");
+            }
+
+            /// <summary>
+            /// Resuelve la jerarquía del rig (origen de realidad extendida > desplazamiento de
+            /// cámara > cámara) y crea los mandos. Devuelve false si la jerarquía no es la
+            /// esperada; en ese caso no crea nada.
+            /// </summary>
+            private bool ResolverJerarquiaYCrearRig()
+            {
+                // Los anclajes de los mandos cuelgan del desplazamiento de camara, no de la raiz
+                // de la escena: las poses que entrega el sistema estan en el espacio del origen
+                // de realidad extendida, y colgarlas de la raiz haria que los mandos se
+                // despegaran de las manos en cuanto el origen se moviera, por ejemplo al
+                // desplazarse a un punto de navegacion.
+                _desplazamientoCamara = Camera.main != null ? Camera.main.transform.parent : null;
+                _origenXR = _desplazamientoCamara != null ? _desplazamientoCamara.parent : null;
+                if (_desplazamientoCamara == null || _origenXR == null) return false;
+
+                var rigGo = new GameObject("~MandosAR");
+                rigGo.transform.SetParent(_desplazamientoCamara, false);
+                _rig = rigGo.AddComponent<MRControllerRig>();
+                _rig.Initialize(_desplazamientoCamara);
+                return true;
+            }
+
+            /// <summary>
+            /// El traspaso: selector primero, pantalla de carga después. Idempotente y SIN
+            /// condiciones: lo llaman el final de la secuencia y la guarda, y gane quien gane el
+            /// resultado es el mismo. Si el selector no puede construirse, se monta la navegación
+            /// por nodos directamente antes que dejar al usuario sin nada.
+            /// </summary>
+            private void MostrarSelectorYRetirarCarga(string motivo)
+            {
+                if (_selectorMostrado) return;
+                _selectorMostrado = true;
+
+                Debug.LogWarning($"[DigitalTwin][AR] Selector de modo visible (transparencia " +
+                                 $"activa: {TransparenciaActiva()}; via: {motivo}).");
+
+                if (MRPerfMonitor.Instancia != null)
+                    MRPerfMonitor.Instancia.FijarFase("selector");
+
+                // El selector ES la pantalla estable a partir de aquí: se muestra ANTES de
+                // retirar la de carga, para que aparezca por detrás del panel que se desvanece.
+                // Un corte seco entre las dos se percibe como un parpadeo.
+                bool selectorCreado = false;
+                try
+                {
+                    var camara = Camera.main != null ? Camera.main : Object.FindFirstObjectByType<Camera>();
+                    if (camara == null) throw new System.InvalidOperationException("no hay ninguna camara");
+                    var index = _index; var rig = _rig;
+                    var desplazamiento = _desplazamientoCamara; var origen = _origenXR;
+                    MRModeSelector.Mostrar(rig, camara, modo =>
+                    {
+                        MRDigitalTwinBootstrap.MontarGemelo(modo, index, rig, desplazamiento, origen);
+                        Destroy(gameObject);
+                    });
+                    selectorCreado = true;
+                }
+                catch (System.Exception e)
+                {
+                    Debug.LogError("[DigitalTwin][AR] No se ha podido construir el selector de " +
+                                   "modo: " + e.Message + (_index != null
+                                       ? ". Se monta navegacion por nodos directamente."
+                                       : ". Sin indice del modelo no se puede montar nada."));
+                }
+
+                // Pase lo que pase, la pantalla de carga se retira y la cámara recupera su máscara.
+                ProgresoDeArranque.Terminar();
+                if (MRPantallaDeCarga.Instancia != null) MRPantallaDeCarga.Instancia.Cerrar();
+
+                if (!selectorCreado && _index != null)
+                {
+                    MRDigitalTwinBootstrap.MontarGemelo(ModoAR.NavegacionPorNodos, _index, _rig,
+                                                        _desplazamientoCamara, _origenXR);
+                    Destroy(gameObject);
+                }
             }
 
             private IEnumerator Secuencia()
             {
+                int fotogramaInicial = Time.frameCount;
+
+                // --- Índice del modelo -----------------------------------------------------
+                ProgresoDeArranque.EntrarEnFase("indice");
+                _index = SceneModelIndex.Build();
+                var index = _index;
+
+                // Resumen del índice a nivel de aviso: la línea detallada de SceneModelIndex es
+                // un mensaje informativo y las compilaciones que no son de desarrollo lo filtran
+                // del registro del dispositivo.
+                Debug.LogWarning($"[DigitalTwin][AR] Indice del modelo: {index.AllElements.Count} " +
+                                 $"elementos, {index.NavPoints.Count} puntos de navegacion, " +
+                                 $"{index.Sensors.Count} sensores.");
+                yield return null;
+
+                // --- Colisionadores --------------------------------------------------------
+                // La pieza más cara del arranque, y la única que se subdivide por dentro.
+                ProgresoDeArranque.EntrarEnFase("colisionadores");
+                yield return StartCoroutine(ColliderBootstrapper.SetupIncremental(
+                    index, ProgresoDeArranque.ProgresoDeFase));
+
+                // --- Jerarquía del rig y mandos --------------------------------------------
+                ProgresoDeArranque.EntrarEnFase("mandos");
+
+                _desplazamientoCamara = Camera.main != null ? Camera.main.transform.parent : null;
+                _origenXR = _desplazamientoCamara != null ? _desplazamientoCamara.parent : null;
+
+                if (_desplazamientoCamara == null || _origenXR == null)
+                {
+                    // Sin la jerarquía del rig no hay mandos, y sin mandos no se puede elegir
+                    // modo. Antes que dejar al usuario ante un selector inoperante, se monta
+                    // directamente la navegación por nodos —el modo que funciona sin anclaje—
+                    // dejando constancia.
+                    Debug.LogError("[DigitalTwin][AR] La camara no cuelga de la jerarquia esperada " +
+                                   "(origen de realidad extendida > desplazamiento de camara > camara). " +
+                                   "Sin mandos no hay selector de modo: se monta navegacion por nodos " +
+                                   "directamente. Revisa el rig de la escena.");
+                    _terminadoSinSelector = true;
+                    ProgresoDeArranque.Terminar();
+                    MRDigitalTwinBootstrap.MontarGemelo(ModoAR.NavegacionPorNodos, index, null,
+                                                        null, null);
+                    Destroy(gameObject);
+                    yield break;
+                }
+
+                // Seguimiento a nivel de suelo, verificado y nunca supuesto: la escena lo pide
+                // (XROrigin en modo Floor con desplazamiento cero desde el 15-08), pero el modo
+                // efectivo lo decide el runtime y aquí se comprueba, se registra y, si no se
+                // consigue, se compensa con una degradación declarada.
+                MRDigitalTwinBootstrap.AsegurarSeguimientoANivelDeSuelo(_origenXR);
+                yield return null;
+
+                ResolverJerarquiaYCrearRig();
+                yield return null;
+
+                // Mientras el usuario elige modo, el gemelo no aporta nada y SÍ cuesta: el modelo
+                // entero se estaba dibujando detrás de las tarjetas del selector (en estéreo y a
+                // resolución de visor) sin que se viera más que el vídeo de la sala. Se apaga la
+                // raíz completa y MontarGemelo la reactiva. La vía de emergencia de arriba (sin
+                // rig) no pasa por aquí a propósito: monta directamente y no debe apagarse nada.
+                var raizModelo = MRDigitalTwinBootstrap.RaizDelModelo(index);
+                if (raizModelo != null)
+                {
+                    raizModelo.SetActive(false);
+                    MRDigitalTwinBootstrap._raizModeloApagadaDuranteSelector = raizModelo;
+                    Debug.LogWarning($"[DigitalTwin][AR] Raiz del modelo '{raizModelo.name}' " +
+                                     "desactivada mientras el selector de modo este en pantalla.");
+                }
+                else
+                {
+                    Debug.LogWarning("[DigitalTwin][AR] No se ha resuelto la raiz del modelo; se " +
+                                     "deja el gemelo dibujandose durante el selector (solo cuesta " +
+                                     "rendimiento, no funcionalidad).");
+                }
+
+                int fotogramasEtapaA = Time.frameCount - fotogramaInicial;
+                if (fotogramasEtapaA > FotogramasSanosDeEtapaA)
+                {
+                    Debug.LogError($"[DigitalTwin][AR] La etapa A ha consumido {fotogramasEtapaA} " +
+                                   $"fotogramas (limite sano {FotogramasSanosDeEtapaA}): se acerca " +
+                                   "a los 90 que la capa de transparencia espera para pedirse con " +
+                                   "el motor tranquilo. Revisa que no haya crecido el trabajo de " +
+                                   "arranque antes de dar por buena la siguiente sesion.");
+                }
+                else
+                {
+                    Debug.LogWarning($"[DigitalTwin][AR] Etapa A repartida en {fotogramasEtapaA} " +
+                                     "fotogramas sin parada perceptible del bucle principal.");
+                }
+
+                // --- Espera de la transparencia --------------------------------------------
+                ProgresoDeArranque.EntrarEnFase("camara");
                 Debug.LogWarning("[DigitalTwin][AR] Arranque diferido: esperando a la transparencia " +
                                  "para mostrar el selector de modo.");
 
                 int fotogramas = 0;
                 while (fotogramas < FotogramasDeEsperaMaxima && !TransparenciaActiva())
                 {
+                    var transparencia = MRPassthroughController.Instancia;
+                    // El avance real de la espera, que es un contador de fotogramas del propio
+                    // controlador. Si no hubiera controlador se cae al reparto sobre la espera
+                    // máxima, que es una estimación pero nunca retrocede.
+                    ProgresoDeArranque.ProgresoDeFase(transparencia != null
+                        ? transparencia.FraccionDeEsperaInicial
+                        : fotogramas / (float)FotogramasDeEsperaMaxima);
                     fotogramas++;
                     yield return null;
                 }
@@ -769,18 +1021,7 @@ namespace DigitalTwin.MR
                     for (int i = 0; i < FotogramasDeMargenTrasReintento; i++) yield return null;
                 }
 
-                Debug.LogWarning($"[DigitalTwin][AR] Selector de modo visible (transparencia " +
-                                 $"activa: {TransparenciaActiva()}).");
-
-                if (MRPerfMonitor.Instancia != null)
-                    MRPerfMonitor.Instancia.FijarFase("selector");
-
-                MRModeSelector.Mostrar(_rig, Camera.main, modo =>
-                {
-                    MRDigitalTwinBootstrap.MontarGemelo(modo, _index, _rig,
-                                                        _desplazamientoCamara, _origenXR);
-                    Destroy(gameObject);
-                });
+                MostrarSelectorYRetirarCarga("secuencia normal");
             }
 
             private static bool TransparenciaActiva()
@@ -876,6 +1117,12 @@ namespace DigitalTwin.MR
                 if (transparencia.ConfirmadaActiva) break;
 
                 intentos++;
+                // Avance de esta fase: no hay forma honesta de saber cuánto falta —se espera a
+                // que el sistema devuelva la sesión— así que la barra avanza hacia el punto en
+                // que se declara el fallo y allí se queda. Una barra que se detiene dice la
+                // verdad; una que sigue subiendo hasta el 100 % sin llegar a nada, no.
+                ProgresoDeArranque.ProgresoDeFase(
+                    Mathf.Min(1f, intentos / (float)IntentosAntesDeDeclararFallo));
                 if (intentos < IntentosAntesDeDeclararFallo)
                 {
                     Debug.LogWarning($"[DigitalTwin][AR] Transparencia sin confirmar (intento " +
@@ -897,6 +1144,11 @@ namespace DigitalTwin.MR
                                    "pestana de Android (no se resuelve sin recompilar). El " +
                                    "detalle esta en las trazas anteriores del passthrough; se " +
                                    $"sigue reintentando cada {SegundosEntreReintentosConAviso:0} s.");
+                    // La pantalla de carga se retira ANTES del aviso: mientras está puesta,
+                    // la cámara solo dibuja su capa y el aviso no se vería. Y a partir de aquí
+                    // ya no hay nada que cargar, sino algo que contar.
+                    if (MRPantallaDeCarga.Instancia != null) MRPantallaDeCarga.Instancia.Cerrar();
+                    ProgresoDeArranque.Terminar();
                     MostrarAviso();
                 }
                 yield return new WaitForSeconds(SegundosEntreReintentosConAviso);
@@ -908,6 +1160,11 @@ namespace DigitalTwin.MR
                 _aviso = null;
                 Debug.LogWarning("[DigitalTwin][AR] La transparencia ha vuelto: se retira el " +
                                  "aviso y se monta el modo anclado.");
+                // Se recupera la pantalla de carga para cubrir el montaje, que sigue costando
+                // lo mismo que si se hubiera montado a la primera.
+                MRPantallaDeCarga.Abrir();
+                ProgresoDeArranque.Comenzar("montaje Anclado",
+                    MRDigitalTwinBootstrap.FasesDeMontaje(ModoAR.Anclado));
             }
 
             Debug.LogWarning("[DigitalTwin][AR] Transparencia CONFIRMADA activa: se monta el " +
@@ -947,8 +1204,12 @@ namespace DigitalTwin.MR
             _aviso.transform.rotation = Quaternion.LookRotation(adelante, Vector3.up);
 
             var rt = (RectTransform)canvas.transform;
+            // Rojo apagado en vez del gris azulado de los demás paneles: este aviso sale
+            // cuando la cámara del visor no responde y conviene que no se confunda con una
+            // ficha normal. La OPACIDAD sí es la común, para que ningún fondo del visor quede
+            // fuera del criterio de MROpacidadInterfaz.
             var fondo = DigitalTwin.UI.RuntimeUIFactory.CreatePanel(rt, "Fondo",
-                new Color(0.12f, 0.05f, 0.06f, 0.93f));
+                MROpacidadInterfaz.ConOpacidadDeFondo(new Color(0.12f, 0.05f, 0.06f)));
             DigitalTwin.UI.RuntimeUIFactory.StretchToParent((RectTransform)fondo.transform);
 
             var tituloRect = DigitalTwin.UI.RuntimeUIFactory.CreateRect(rt, "Titulo");
@@ -979,6 +1240,270 @@ namespace DigitalTwin.MR
                 new Color(1f, 1f, 1f, 0.85f), FontStyle.Normal);
             DigitalTwin.UI.RuntimeUIFactory.StretchToParent(
                 (RectTransform)cuerpoRect.GetChild(0).transform);
+        }
+    }
+
+    /// <summary>
+    /// Ejecuta el montaje del gemelo digital repartido entre fotogramas, en cualquiera de los
+    /// dos modos.
+    ///
+    /// POR QUÉ EXISTE. Hasta este cambio el montaje era una llamada síncrona: entre la traza
+    /// «Montaje del gemelo digital iniciado» y «Bootstrap de Realidad Aumentada completo» el
+    /// registro del visor del 18-08 mide 383 ms dentro de un único fotograma. Son 34 fotogramas
+    /// a 90 Hz durante los cuales el compositor de OpenXR reproyecta el último fotograma
+    /// entregado: la imagen se queda pegada a la cabeza justo después de que el usuario haya
+    /// disparado el gatillo, que es el peor momento posible para que deje de responder.
+    ///
+    /// El contenido y el ORDEN son los que tenía el montaje síncrono. Lo único que se ha
+    /// añadido son cesiones de fotograma entre piezas y la declaración de fase para la pantalla
+    /// de carga. En particular: en modo anclado el servicio de anclaje se crea antes que el
+    /// binder para que el binder esté suscrito cuando se restaure un anclaje guardado, y la
+    /// oclusión se aplica después de las piezas comunes. Nada de eso se ha movido.
+    /// </summary>
+    internal class MRMontajeGemelo : MonoBehaviour
+    {
+        private ModoAR _modo;
+        private SceneModelIndex _index;
+        private MRControllerRig _rig;
+        private Transform _desplazamientoCamara;
+        private Transform _origenXR;
+        private GameObject _raizApagada;
+
+        private MetadataPanelController _panel;
+        private WorldPanelPlacer _colocador;
+
+        public void Iniciar(ModoAR modo, SceneModelIndex index, MRControllerRig rig,
+                            Transform desplazamientoCamara, Transform origenXR,
+                            GameObject raizApagada)
+        {
+            _modo = modo;
+            _index = index;
+            _rig = rig;
+            _desplazamientoCamara = desplazamientoCamara;
+            _origenXR = origenXR;
+            _raizApagada = raizApagada;
+            StartCoroutine(Secuencia());
+        }
+
+        private IEnumerator Secuencia()
+        {
+            if (_modo == ModoAR.Anclado) yield return StartCoroutine(MontarAnclado());
+            else yield return StartCoroutine(MontarNavegacionPorNodos());
+
+            ProgresoDeArranque.Terminar();
+            if (MRPantallaDeCarga.Instancia != null) MRPantallaDeCarga.Instancia.Cerrar();
+
+            Debug.LogWarning($"[DigitalTwin][AR] Bootstrap de Realidad Aumentada completo " +
+                             $"(modo {_modo}).");
+            Destroy(gameObject);
+        }
+
+        private IEnumerator MontarNavegacionPorNodos()
+        {
+            ProgresoDeArranque.EntrarEnFase("geometria");
+            MRDigitalTwinBootstrap.ReactivarRaiz(_raizApagada);
+            _raizApagada = null;
+
+            // En navegación por nodos un anclaje persistido de una sesión anterior movería el
+            // edificio entero bajo los pies del usuario a mitad de recorrido, que es exactamente
+            // lo contrario de lo que ese modo promete (el modelo quieto y el usuario saltando
+            // entre nodos): el servicio de anclaje no se crea.
+            Debug.LogWarning("[DigitalTwin][AR] Anclaje espacial no aplicable en navegacion " +
+                             "por nodos: el modelo permanece en su pose de autor.");
+            yield return null;
+
+            yield return StartCoroutine(MRDigitalTwinBootstrap.MontarComunIncremental(
+                _index, (panel, colocador) => { _panel = panel; _colocador = colocador; }));
+
+            // La transparencia se apaga al entrar: la revisión remota se hace desde la
+            // oficina, y el vídeo de la sala real detrás del modelo solo confunde. No se
+            // persiste la preferencia: al próximo arranque el selector vuelve a mostrarse
+            // sobre transparencia.
+            if (MRPassthroughController.Instancia != null)
+                MRPassthroughController.Instancia.Aplicar(false);
+
+            MRNodeNavigator navegador = null;
+            MRMenuZonas menuZonas = null;
+
+            ProgresoDeArranque.EntrarEnFase("navegacion");
+
+            if (_origenXR == null)
+            {
+                // Vía de emergencia sin jerarquía de rig: sin origen de realidad extendida
+                // no hay a qué aplicar los desplazamientos, así que la navegación queda
+                // contemplativa. Ya quedó registrado el error de jerarquía más arriba.
+                Debug.LogError("[DigitalTwin][AR] Sin origen de realidad extendida no se " +
+                               "monta la navegacion por nodos: no habria a que aplicar los " +
+                               "desplazamientos.");
+            }
+            else
+            {
+                var indicadoresGo = new GameObject("~IndicadoresDestinoAR");
+                Object.DontDestroyOnLoad(indicadoresGo);
+                var indicadores = indicadoresGo.AddComponent<MRIndicadoresDestino>();
+                indicadores.Initialize(Camera.main);
+                yield return null;
+
+                var navegadorGo = new GameObject("~NavegacionPorNodosAR");
+                Object.DontDestroyOnLoad(navegadorGo);
+                navegador = navegadorGo.AddComponent<MRNodeNavigator>();
+                navegador.Initialize(_origenXR, Camera.main, _index, indicadores);
+                navegador.ColocarEnNodoInicial();
+                yield return null;
+
+                // El menú del modo de navegación (zonas, iluminación solar, volver al
+                // selector). Solo con mandos: sin rig no habría forma de abrirlo ni de elegir.
+                ProgresoDeArranque.EntrarEnFase("menus");
+                if (_rig != null)
+                {
+                    var menuGo = new GameObject("~MenuZonasARRaiz");
+                    Object.DontDestroyOnLoad(menuGo);
+                    menuZonas = menuGo.AddComponent<MRMenuZonas>();
+                    menuZonas.Initialize(_rig, Camera.main, navegador, _index);
+                    yield return null;
+                }
+                else
+                {
+                    Debug.LogWarning("[DigitalTwin][AR] Sin rig de mandos no se crea el " +
+                                     "menu: no habria boton con que abrirlo.");
+                }
+            }
+
+            MRDigitalTwinBootstrap.CrearInteraccion(_rig, _desplazamientoCamara, _panel,
+                _colocador, navegador, _index, menuZonas, colocacionAnclaje: null,
+                identificarSenalado: false);
+        }
+
+        private IEnumerator MontarAnclado()
+        {
+            ProgresoDeArranque.EntrarEnFase("geometria");
+            MRDigitalTwinBootstrap.ReactivarRaiz(_raizApagada);
+            _raizApagada = null;
+            yield return null;
+
+            ProgresoDeArranque.EntrarEnFase("anclaje");
+
+            MRColocacionAnclaje colocacion = null;
+            var anclajeGo = new GameObject("~MRAnchorService");
+            Object.DontDestroyOnLoad(anclajeGo);
+            var anclaje = anclajeGo.AddComponent<MRAnchorService>();
+
+            var binder = anclajeGo.AddComponent<ModelAnchorBinder>();
+            binder.Initialize(_index, anclaje, _origenXR);
+
+            anclaje.OnEstadoCambiado += estado =>
+                Debug.LogWarning($"[DigitalTwin][MR] Estado del anclaje: {estado}.");
+            yield return null;
+
+            if (_rig != null && binder.RaizModelo != null)
+            {
+                var colocacionGo = new GameObject("~ColocacionAnclajeAR");
+                Object.DontDestroyOnLoad(colocacionGo);
+                colocacion = colocacionGo.AddComponent<MRColocacionAnclaje>();
+                colocacion.Initialize(_rig, Camera.main, _index, anclaje, binder, _origenXR);
+
+                // La leyenda del mando nace en la etapa A con los controles de navegación; en
+                // anclado el gatillo también toma puntos y A/X abre el menú (desde la ronda 9
+                // el mismo gesto que en navegación; el panel de anclaje se reabre desde él).
+                _rig.FijarLeyenda("Gatillo · seleccionar / tomar punto\n" +
+                                  "A o X · menu\n" +
+                                  "Joystick · desplazar la ficha");
+                yield return null;
+            }
+            else
+            {
+                Debug.LogError("[DigitalTwin][AR] Sin rig de mandos o sin raiz de modelo no se crea la " +
+                               "interfaz de colocacion: el anclaje solo podra restaurarse, nunca crearse.");
+            }
+
+            yield return StartCoroutine(MRDigitalTwinBootstrap.MontarComunIncremental(
+                _index, (panel, colocador) => { _panel = panel; _colocador = colocador; }));
+
+            // La geometría pasa a oclusor invisible o desaparece (solo-profundidad desde el
+            // primer fotograma; el canario de revelado verde se retiró el 15-08 tras cumplir su
+            // función diagnóstica) y los marcadores quedan fuera de la selección.
+            ProgresoDeArranque.EntrarEnFase("oclusion");
+            yield return StartCoroutine(MROcclusionService.AplicarIncremental(
+                _index, ProgresoDeArranque.ProgresoDeFase, null));
+            ColliderBootstrapper.ExcluirPuntosDeNavegacionDeLaSeleccion(_index);
+
+            // Menú del modo anclado (ronda 9): mismo gesto y misma forma que el menú de
+            // navegación, para que se aprenda una sola vez. NO contiene zonas —aquí el
+            // desplazamiento es físico y un teletransporte desincronizaría la vista del
+            // cuerpo, la misma razón por la que este modo no ofrece puntos de navegación—;
+            // aloja el panel de anclaje, rehacer el anclaje y la vuelta al selector de modo.
+            ProgresoDeArranque.EntrarEnFase("menus");
+            MRMenuAnclado menuAnclado = null;
+            if (_rig != null)
+            {
+                var menuAncladoGo = new GameObject("~MenuAncladoARRaiz");
+                Object.DontDestroyOnLoad(menuAncladoGo);
+                menuAnclado = menuAncladoGo.AddComponent<MRMenuAnclado>();
+                menuAnclado.Initialize(_rig, Camera.main, colocacion);
+                yield return null;
+            }
+            else
+            {
+                Debug.LogWarning("[DigitalTwin][AR] Sin rig de mandos no se crea el menu del " +
+                                 "modo anclado: no habria boton con que abrirlo.");
+            }
+
+            // La etiqueta de señalado solo existe en anclado: con los oclusores invisibles y en
+            // un entorno oscuro es la única respuesta continua a «qué estoy señalando» que no
+            // exige disparar ni depende de la iluminación de la sala.
+            MRDigitalTwinBootstrap.CrearInteraccion(_rig, _desplazamientoCamara, _panel,
+                _colocador, navegador: null, index: _index, menuZonas: null,
+                colocacionAnclaje: colocacion, identificarSenalado: true,
+                menuAnclado: menuAnclado);
+        }
+    }
+
+    /// <summary>
+    /// Conduce la recarga de escena de la vuelta al selector, de forma asíncrona y con la
+    /// pantalla de carga puesta.
+    ///
+    /// La versión anterior llamaba a <c>SceneManager.LoadScene</c>, que descarga y carga dentro
+    /// del mismo fotograma: 58 ms medidos en el visor el 18-08. La carga asíncrona deja que el
+    /// motor la reparta y devuelve el control cada fotograma, con lo que la aplicación sigue
+    /// entregando imágenes al compositor durante toda la operación. El fotograma de activación
+    /// —cuando el motor sustituye una escena por otra— sigue siendo caro y no hay forma de
+    /// evitarlo desde la aplicación; lo que se elimina es todo lo demás.
+    /// </summary>
+    internal class MRRecargaDeEscena : MonoBehaviour
+    {
+        private string _escena;
+
+        public void Iniciar(string escena)
+        {
+            _escena = escena;
+            StartCoroutine(Secuencia());
+        }
+
+        private IEnumerator Secuencia()
+        {
+            ProgresoDeArranque.EntrarEnFase("escena");
+
+            var operacion = SceneManager.LoadSceneAsync(_escena);
+            if (operacion == null)
+            {
+                Debug.LogError($"[DigitalTwin][AR] La carga asincrona de '{_escena}' no ha " +
+                               "devuelto operacion. Se recarga de forma sincrona como respaldo: " +
+                               "habra una parada, pero es preferible a quedarse sin escena.");
+                SceneManager.LoadScene(_escena);
+                MRDigitalTwinBootstrap.RearrancarTrasRecarga(_escena);
+                Destroy(gameObject);
+                yield break;
+            }
+
+            while (!operacion.isDone)
+            {
+                ProgresoDeArranque.ProgresoDeFase(operacion.progress);
+                yield return null;
+            }
+            ProgresoDeArranque.ProgresoDeFase(1f);
+
+            MRDigitalTwinBootstrap.RearrancarTrasRecarga(_escena);
+            Destroy(gameObject);
         }
     }
 }

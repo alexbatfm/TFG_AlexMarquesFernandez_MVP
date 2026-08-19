@@ -227,9 +227,27 @@ namespace DigitalTwin.MR
             StartCoroutine(EncenderCuandoLaEscenaSeAsiente());
         }
 
+        /// <summary>
+        /// Avance de la espera inicial de <see cref="FotogramasDeEspera"/> fotogramas, en [0,1].
+        ///
+        /// Lo lee la pantalla de carga. Es la única parte del arranque cuyo progreso se conoce
+        /// de antemano con exactitud —es un contador, no una estimación— y resulta ser también
+        /// la más larga en tiempo de pared: en la sesión del 18-08 pasaron 1,15 s entre el punto
+        /// de entrada y la creación de la capa. Poder enseñar ese avance convierte la parte
+        /// mayor de la espera en una espera con final visible. Solo se expone; NADIE debe usar
+        /// esta propiedad para acortar ni alterar la espera, cuyo motivo (la violación de
+        /// segmento del servicio del visor del 13-08) está explicado en la constante.
+        /// </summary>
+        public float FraccionDeEsperaInicial { get; private set; }
+
         private System.Collections.IEnumerator EncenderCuandoLaEscenaSeAsiente()
         {
-            for (int i = 0; i < FotogramasDeEspera; i++) yield return null;
+            for (int i = 0; i < FotogramasDeEspera; i++)
+            {
+                FraccionDeEsperaInicial = (i + 1) / (float)FotogramasDeEspera;
+                yield return null;
+            }
+            FraccionDeEsperaInicial = 1f;
             AplicarPreferenciaInicial();
         }
 
@@ -654,6 +672,26 @@ namespace DigitalTwin.MR
             GuardarAjustesCamara();
             _camara.clearFlags = CameraClearFlags.SolidColor;
             _camara.backgroundColor = new Color(0f, 0f, 0f, 0f);
+        }
+
+        /// <summary>
+        /// Registra como «ajustes originales» de la cámara unos valores que se leyeron ANTES de
+        /// que otro componente la tocara.
+        ///
+        /// Existe por la pantalla de carga: para poder enseñar un fondo neutro mientras la capa
+        /// de transparencia todavía no está, esa pantalla cambia el borrado de la cámara antes
+        /// de que este controlador lo guarde. Sin este método, al apagar la transparencia —lo
+        /// que hace el modo de navegación por nodos al entrar— se restauraría el fondo de carga
+        /// en lugar del cielo que traía la escena.
+        ///
+        /// No cambia nada del ciclo de vida de la capa: solo escribe la copia de seguridad.
+        /// </summary>
+        public void AdoptarAjustesDeCamaraPrevios(CameraClearFlags borrado, Color fondo)
+        {
+            if (_ajustesGuardados) return;
+            _borradoOriginal = borrado;
+            _fondoOriginal = fondo;
+            _ajustesGuardados = true;
         }
 
         private void GuardarAjustesCamara()

@@ -1,3 +1,4 @@
+using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -20,8 +21,43 @@ namespace DigitalTwin.Core
 
         public static int NavPointLayer { get; private set; } = -1;
 
+        /// <summary>
+        /// Versión síncrona, conservada para quien no necesite repartir el trabajo (el Editor,
+        /// una herramienta, una prueba). Consume la versión incremental de una sentada.
+        /// </summary>
         public static void Setup(SceneModelIndex index)
         {
+            var pasos = SetupIncremental(index, null);
+            while (pasos.MoveNext()) { }
+        }
+
+        /// <summary>
+        /// Igual que <see cref="Setup"/>, pero repartido entre fotogramas.
+        ///
+        /// POR QUÉ ESTE MÉTODO ES INCREMENTAL Y NO OTROS. En la sesión del 2026-08-18 (01:15) el
+        /// registro del visor mide 71 ms entre la traza del índice del modelo y la de este
+        /// método: los 351 <c>MeshCollider</c> son, con diferencia, la pieza más cara del
+        /// arranque, y hasta ahora se creaban todos dentro del mismo fotograma. La razón del
+        /// coste no es el <c>AddComponent</c> sino la asignación de <c>sharedMesh</c> con
+        /// <c>convex = false</c>: PhysX construye entonces la estructura de aceleración de la
+        /// malla de triángulos, y ese cocinado es trabajo de CPU en el hilo principal. El mismo
+        /// registro lo confirma por otra vía: en la segunda ejecución de la misma sesión, tras
+        /// recargar la escena, el método baja a 13 ms porque las mallas ya están cocinadas y en
+        /// caché. Es decir, los 71 ms son coste de primera vez, exactamente el instante en que el
+        /// usuario acaba de ponerse el visor.
+        ///
+        /// Setenta y un milisegundos son seis fotogramas perdidos a los 90 Hz que el visor declara en el
+        /// propio registro (<c>RefreshRate change: 90.0</c>). Repartidos en
+        /// tramos de <see cref="PresupuestoDeFotograma"/> el trabajo total no baja —sube un poco,
+        /// por el coste de reanudar— pero deja de haber ningún fotograma que se lo lleve entero,
+        /// que es lo que decide si la imagen sigue respondiendo a la cabeza.
+        /// </summary>
+        /// <param name="progreso">Avance en [0,1] para la pantalla de carga. Admite null.</param>
+        public static IEnumerator SetupIncremental(SceneModelIndex index,
+                                                   System.Action<float> progreso)
+        {
+            var presupuesto = new PresupuestoDeFotograma();
+
             NavPointLayer = LayerMask.NameToLayer(NavPointLayerName);
             if (NavPointLayer < 0)
             {
@@ -41,13 +77,21 @@ namespace DigitalTwin.Core
                 if (meta == null) continue;
                 foreach (var t in meta.GetComponentsInChildren<Transform>(true))
                     deEspacios.Add(t.gameObject);
+
+                if (presupuesto.Agotado)
+                {
+                    yield return null;
+                    presupuesto.Reiniciar();
+                }
             }
 
             int added = 0, skipped = 0, espacios = 0;
             var seen = new HashSet<GameObject>();
 
-            foreach (var mf in Object.FindObjectsByType<MeshFilter>(FindObjectsSortMode.None))
+            var filtros = Object.FindObjectsByType<MeshFilter>(FindObjectsSortMode.None);
+            for (int i = 0; i < filtros.Length; i++)
             {
+                var mf = filtros[i];
                 var go = mf.gameObject;
                 if (!seen.Add(go)) continue;
                 if (mf.sharedMesh == null) continue;
@@ -58,7 +102,18 @@ namespace DigitalTwin.Core
                 col.sharedMesh = mf.sharedMesh;
                 col.convex = false;
                 added++;
+
+                // La comprobación va DESPUÉS de crear el collider y no antes: el cocinado de una
+                // malla grande puede agotar el presupuesto por sí solo, y en ese caso lo correcto
+                // es ceder el fotograma inmediatamente, no encadenar otro cocinado.
+                if (presupuesto.Agotado)
+                {
+                    progreso?.Invoke((i + 1) / (float)filtros.Length);
+                    yield return null;
+                    presupuesto.Reiniciar();
+                }
             }
+            progreso?.Invoke(1f);
 
             Debug.Log($"[DigitalTwin] ColliderBootstrapper: {added} MeshCollider añadidos, {skipped} objetos ya tenían " +
                       $"collider, {espacios} omitidos por ser geometría no representable " +

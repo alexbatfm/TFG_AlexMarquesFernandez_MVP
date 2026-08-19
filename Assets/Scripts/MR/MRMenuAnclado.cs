@@ -128,8 +128,11 @@ namespace DigitalTwin.MR
             // muro que ni siquiera se ve.
             var material = MRIndicadoresDestino.MaterialSiempreVisible();
 
+            // Misma opacidad que la ficha de activos y que el menú de zonas: ver
+            // MROpacidadInterfaz. Los dos menús se abren en la misma sesión y una diferencia
+            // de dos centésimas es visible sobre un vídeo de cámaras claro.
             var fondo = DigitalTwin.UI.RuntimeUIFactory.CreatePanel(_raiz, "Fondo",
-                new Color(0.05f, 0.06f, 0.08f, 0.94f));
+                MROpacidadInterfaz.ColorDeFondo);
             DigitalTwin.UI.RuntimeUIFactory.StretchToParent((RectTransform)fondo.transform);
             if (material != null) fondo.material = material;
 
