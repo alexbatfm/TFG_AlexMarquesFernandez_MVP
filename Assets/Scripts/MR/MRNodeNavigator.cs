@@ -47,9 +47,30 @@ namespace DigitalTwin.MR
     /// alturas distintas por tipo de nodo, ni viajes que preserven o impongan alturas de
     /// vista. Las tres reglas especiales que hacían eso se eliminaron al unificar la causa. El
     /// refresco registra la altura de cada cartel, y cada llegada la altura real de la vista.
+    ///
+    /// SOBRE EL DATUM VERTICAL (corrección del 19-08). «Viaje horizontal» no basta por sí solo:
+    /// con seguimiento a nivel de suelo la estatura del usuario se mide desde el plano y=0 del
+    /// seguimiento, y ese plano está en el mundo donde esté el ORIGEN de realidad extendida. El
+    /// origen de ARScene estaba guardado a y=0,441 m (y con 4,16° de cabeceo, que nivela el
+    /// bootstrap), así que la vista quedaba 44 cm más alta sobre el suelo del modelo que sobre
+    /// el suelo real —«casi en el techo»— y las trazas «vista a X m del suelo», que medían la y
+    /// de mundo de la cámara, lo ocultaban: 1,65 m el 18-08 con el visor a 1,21 m del suelo. Desde
+    /// hoy, cada colocación en un nodo ALINEA la cota del origen con el suelo de ese nodo
+    /// (<see cref="AlinearSueloConNodo"/>: posición del nodo menos su altura de nodo, más la
+    /// elevación que el bootstrap haya declarado para las degradaciones sin suelo). Sigue sin
+    /// escribirse la altura de la vista: se mueve el suelo virtual hasta el físico, y la
+    /// estatura la pone el usuario. Las trazas dicen ahora la altura SOBRE EL SUELO DEL NODO, la
+    /// cota del origen y la posición de la cabeza en el espacio de seguimiento, para que una
+    /// próxima discrepancia se diagnostique desde el registro.
     /// </summary>
     public class MRNodeNavigator : MonoBehaviour
     {
+        /// <summary>Cadencia de la traza periódica de pose (origen, cabeza, altura). Es la
+        /// evidencia que pidió la revisión del 19-08 para separar un defecto de la aplicación de
+        /// una deriva del seguimiento del visor.</summary>
+        private const float SegundosEntreTrazasDePose = 10f;
+        private float _proximaTrazaDePose;
+
         /// <summary>Misma constante que el desplazamiento simple original: por debajo de esta
         /// longitud la transición no aporta orientación y solo hace esperar.</summary>
         private const float DistanciaMinimaParaAnimar = 1.5f;
@@ -219,16 +240,79 @@ namespace DigitalTwin.MR
             }
 
             // Desplazamiento HORIZONTAL: la altura de la vista es del usuario (seguimiento a
-            // nivel de suelo) y ninguna colocación la escribe.
+            // nivel de suelo) y ninguna colocación la escribe. Lo que sí se alinea es el DATUM:
+            // el suelo de seguimiento con el suelo del nodo (ver cabecera, 19-08).
             Vector3 delta = PosicionDeNodo(mejor) - _camara.transform.position;
             delta.y = 0f;
             _origenXR.position += delta;
             _indiceNodoActual = mejor;
+            AlinearSueloConNodo(mejor, "nodo inicial");
             Debug.LogWarning($"[DigitalTwin][AR] Nodo inicial: '{Etiqueta(mejor)}' " +
-                             $"(estaba a {mejorDist:0.0} m; vista a " +
-                             $"{_camara.transform.position.y:0.00} m del suelo).");
+                             $"(estaba a {mejorDist:0.0} m; {DescribirVista(mejor)}).");
             PuertaTransparente.AlLlegarANodo(MetaDe(mejor));
             RefrescarIndicadores();
+        }
+
+        /// <summary>Cota del suelo de un nodo en mundo: su posición viva menos la altura de nodo
+        /// unificada (la misma regla, invertida, que <see cref="PosicionDeNodos"/>).</summary>
+        private float SueloDeNodo(int indiceNodo) => PosicionDeNodo(indiceNodo).y - PosicionDeNodos.AlturaDeNodo;
+
+        /// <summary>
+        /// Lleva la cota del origen de realidad extendida al suelo del nodo, más la elevación
+        /// que el bootstrap haya declarado para las degradaciones sin seguimiento de suelo. Con
+        /// origen Floor el plano y=0 del seguimiento es el suelo real, así que tras esto el
+        /// suelo real y el del nodo coinciden y la altura de la vista sobre el suelo del modelo
+        /// es la estatura del usuario. Deja traza de QUÉ altura se aplica y de dónde sale.
+        /// </summary>
+        private void AlinearSueloConNodo(int indiceNodo, string motivo)
+        {
+            if (_origenXR == null || indiceNodo < 0) return;
+            float sueloNodo = SueloDeNodo(indiceNodo);
+            float elevacion = MRDigitalTwinBootstrap.ElevacionOrigenSobreSuelo;
+            float objetivo = sueloNodo + elevacion;
+            Vector3 p = _origenXR.position;
+            float antes = p.y;
+            if (Mathf.Abs(antes - objetivo) < 0.001f) return;
+            p.y = objetivo;
+            _origenXR.position = p;
+            Debug.LogWarning($"[DigitalTwin][AR] Suelo alineado ({motivo}): origen XR de y={antes:0.000} a " +
+                             $"y={objetivo:0.000} = suelo del nodo '{Etiqueta(indiceNodo)}' ({sueloNodo:0.000}) " +
+                             $"+ elevacion declarada por el bootstrap ({elevacion:0.00}). ALTURA APLICADA A LA " +
+                             "VISTA: ninguna; se mueve el suelo virtual hasta el fisico y la estatura la pone " +
+                             "el usuario.");
+        }
+
+        /// <summary>Descripción de la vista para las trazas: altura sobre el suelo del nodo, y
+        /// de mundo, cota del origen y posición de la cabeza en el espacio de seguimiento.</summary>
+        private string DescribirVista(int indiceNodo)
+        {
+            Vector3 cam = _camara.transform.position;
+            float suelo = indiceNodo >= 0 ? SueloDeNodo(indiceNodo) : 0f;
+            Vector3 cabezaSeg = _origenXR != null ? _origenXR.InverseTransformPoint(cam) : cam;
+            float oy = _origenXR != null ? _origenXR.position.y : 0f;
+            return $"vista a {cam.y - suelo:0.00} m sobre el suelo del nodo (y mundo {cam.y:0.00}; " +
+                   $"origen XR y={oy:0.000}; cabeza en seguimiento ({cabezaSeg.x:0.00}, {cabezaSeg.y:0.00}, " +
+                   $"{cabezaSeg.z:0.00}))";
+        }
+
+        /// <summary>
+        /// Traza periódica de pose (cada <see cref="SegundosEntreTrazasDePose"/> s) mientras hay
+        /// nodo actual: pose del origen con su inclinación, cabeza en seguimiento y altura sobre
+        /// el suelo del nodo. Si la altura sobre el suelo cambia sin que cambie la estatura del
+        /// usuario, o la inclinación del origen deja de ser 0, el registro lo dirá solo.
+        /// </summary>
+        private void Update()
+        {
+            if (!Disponible || _indiceNodoActual < 0 || _camara == null || _origenXR == null) return;
+            if (Time.time < _proximaTrazaDePose) return;
+            _proximaTrazaDePose = Time.time + SegundosEntreTrazasDePose;
+            Vector3 e = _origenXR.rotation.eulerAngles;
+            Debug.LogWarning($"[DigitalTwin][AR][Pose] nodo '{Etiqueta(_indiceNodoActual)}': origen XR " +
+                             $"pos {_origenXR.position}, Euler ({e.x:0.00}, {e.y:0.0}, {e.z:0.00}), " +
+                             $"inclinacion {Vector3.Angle(_origenXR.up, Vector3.up):0.00}°; " +
+                             $"{DescribirVista(_indiceNodoActual)}; camara Euler " +
+                             $"({_camara.transform.eulerAngles.x:0.0}, {_camara.transform.eulerAngles.y:0.0}, " +
+                             $"{_camara.transform.eulerAngles.z:0.0}).");
         }
 
         /// <summary>Índice de nodo del grafo para un elemento, o -1 si no es un nodo.</summary>
@@ -511,13 +595,20 @@ namespace DigitalTwin.MR
                 _origenXR.position += hasta - previo;
             }
 
-            if (nodoFinal >= 0) _indiceNodoActual = nodoFinal;
+            if (nodoFinal >= 0)
+            {
+                _indiceNodoActual = nodoFinal;
+                // El datum vertical se alinea en cada llegada (19-08): en un modelo de varias
+                // plantas cada nodo lleva su suelo, y en uno de una planta es un no-op tras la
+                // primera vez. Ninguna llegada escribe la altura de la vista.
+                AlinearSueloConNodo(nodoFinal, "llegada");
+            }
             EnTransito = false;
             // La altura de la vista va en cada llegada: es el dato que permite comprobar en una
             // sola prueba que el seguimiento a nivel de suelo funciona (debe ser la estatura
-            // real del usuario, estable entre llegadas, no la altura de ningún nodo).
-            Debug.LogWarning($"[DigitalTwin][AR] Llegada a '{etiquetaFinal}' (vista a " +
-                             $"{_camara.transform.position.y:0.00} m del suelo).");
+            // real del usuario SOBRE EL SUELO DEL NODO, estable entre llegadas, no la altura de
+            // ningún nodo ni la y de mundo de la cámara, que era lo que se escribía hasta el 19-08).
+            Debug.LogWarning($"[DigitalTwin][AR] Llegada a '{etiquetaFinal}' ({DescribirVista(nodoFinal)}).");
 
             // La regla de la puerta: si el nodo alcanzado es una puerta, su hoja deja de
             // dibujarse mientras se ocupe; si no lo es, cualquier hoja oculta se restituye.

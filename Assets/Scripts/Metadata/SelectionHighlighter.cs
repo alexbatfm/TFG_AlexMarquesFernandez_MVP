@@ -57,6 +57,11 @@ namespace DigitalTwin.Metadata
         /// <summary>Objeto resaltado ahora mismo, o null si no hay ninguno.</summary>
         public Transform Objetivo => _objetivoActual;
 
+        /// <summary>Caja de aristas (LineRenderer). Se expone para que la visibilidad selectiva
+        /// (<see cref="MR.MRVisibilidadSelectiva"/>) le añada la pasada que se ve a través de
+        /// los cerramientos; nadie más debe tocarla.</summary>
+        public LineRenderer CajaDeAristas => _caja;
+
         private void Awake()
         {
             _bloque = new MaterialPropertyBlock();

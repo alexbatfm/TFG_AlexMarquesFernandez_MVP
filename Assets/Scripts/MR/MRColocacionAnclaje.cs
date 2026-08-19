@@ -53,7 +53,11 @@ namespace DigitalTwin.MR
     /// altura de autor menos los 1,55 m con que se colocaron) y el punto físico es siempre el
     /// impacto del rayo con el suelo de seguimiento, así que la transformación lleva suelo a
     /// suelo. Cada punto deja en el registro las tres cifras: altura del punto del modelo,
-    /// altura de la pose recibida (el mando) y corrección vertical aplicada.
+    /// altura de la pose recibida (el mando) y corrección vertical aplicada. DESDE EL 19-08 el
+    /// «suelo de seguimiento» es el plano y=0 DEL SEGUIMIENTO llevado al mundo con el transform
+    /// del origen (<see cref="PlanoSueloFisico"/>), no el plano horizontal de mundo a la cota del
+    /// origen: el origen de ARScene estaba guardado con 4,16° de cabeceo y los dos planos no
+    /// coincidían, con el modelo inclinado y su suelo hundido o elevado 7,3 cm por metro.
     ///
     /// FLUJO: al arrancar, si el servicio restaura un anclaje guardado, no se pregunta nada
     /// (aviso breve, con la opción de recolocar); si no lo hay, el panel de registro se abre
@@ -100,9 +104,30 @@ namespace DigitalTwin.MR
         private const float LadoPlanoPx = 300f;
         private const float AltoBotonPx = 46f;
         private const float SegundosAvisoBreve = 9f;
-        private const float DistanciaReubicarPanel = 2.2f;
-        private const float AnguloReubicarPanel = 60f;
-        private const float SegundosFueraAntesDeReubicar = 0.8f;
+
+        // Seguimiento del panel (19-08). Hasta entonces el panel se quedaba donde se abrió y solo
+        // saltaba delante del usuario si se alejaba más de 2,2 m o giraba más de 60° durante
+        // 0,8 s: en la práctica, al moverse por la estancia se perdía de vista, y con él la
+        // frase que dice QUÉ punto se está capturando. Ahora lo coloca el mismo componente que
+        // la ficha de metadatos (WorldPanelPlacer: zona muerta con histéresis, giro suavizado,
+        // traslación inmediata), con MÁS holgura y MÁS retardo que la ficha, porque durante el
+        // registro el usuario apunta a sitios concretos del suelo y un panel que le siguiera
+        // pegado a la mirada le taparía justo lo que intenta apuntar. El panel entero queda
+        // bajo la línea de visión (borde superior 2,4° por debajo de los ojos; con 0,60 m de
+        // alto a 1,15 m, el borde inferior queda a unos 30° bajo la horizontal): el umbral de
+        // una puerta a menos de 2 m del mando está a 39° o más bajo los ojos, y el rayo que va
+        // de la mano al suelo pasa por debajo del panel —el gesto válido no lo atraviesa—.
+        private const float ZonaMuertaPanelGrados = 30f;
+        private const float SuavizadoPanel = 2.5f;
+        private const float MargenBajoVisionPanelGrados = 2.4f;
+
+        // Maquetación por medición (19-08): alturas MÍNIMAS de los bloques de texto; la real la
+        // decide el texto (ver AjustarMaquetacion), y el panel crece si hace falta.
+        private const float AltoMinimoInstruccionPx = 52f;
+        private const float AltoMinimoEstadoPx = 26f;
+        private const float AltoMinimoCalidadPx = 0f;
+        private const float SeparacionBloquesPx = 8f;
+        private const float AltoPiePx = 28f;
 
         // Este panel iba a 0,94 y el resto del visor a 0,91 o 0,92. Entra en el criterio
         // uniforme (MROpacidadInterfaz) porque se abre junto al menú del modo anclado, y ahí
@@ -137,6 +162,8 @@ namespace DigitalTwin.MR
             public Text Texto;
             public Image Fondo;
             public BoxCollider Volumen;
+            public RectTransform Rect;
+            public int Fila;
             public bool Activo = true;
             public bool Senalado;
         }
@@ -189,7 +216,12 @@ namespace DigitalTwin.MR
         private GameObject _cursorSuelo;
         private Image _cursorImagen;
         private readonly List<GameObject> _banderas = new List<GameObject>();
-        private float _fueraDesde = -1f;
+        /// <summary>Colocador del panel ante el usuario: el de la ficha de metadatos, en su
+        /// variante sin línea ni volumen (ver las constantes de seguimiento).</summary>
+        private DigitalTwin.Metadata.WorldPanelPlacer _colocador;
+        private RectTransform _pie;
+        private float _altoActualPx = AltoPx;
+        private string _textoEstadoMaquetado;
 
         /// <summary>Verdadero mientras el panel está abierto: el controlador de interacción
         /// cede el rayo (mismo contrato que <see cref="MRMenuZonas.Abierto"/>).</summary>
@@ -275,8 +307,10 @@ namespace DigitalTwin.MR
             Debug.LogWarning($"[DigitalTwin][MR] Interfaz de colocacion lista: {_candidatas.Count} puertas " +
                              $"candidatas, plan de {_plan.Count} estaciones; minimo {PuntosMinimos}, " +
                              $"recomendado {PuntosRecomendados}. Suelo fisico (mundo) en y=" +
-                             $"{AlturaSueloFisico():0.000}. A/X (M en el Editor) la oculta; se " +
-                             "reabre desde el menu del modo anclado.");
+                             $"{AlturaSueloFisico():0.000}, inclinacion del suelo de seguimiento " +
+                             $"respecto al mundo {(_origenXR != null ? Vector3.Angle(_origenXR.up, Vector3.up) : 0f):0.00}° " +
+                             "(debe ser 0,00: el bootstrap nivela el origen). A/X (M en el Editor) la " +
+                             "oculta; se reabre desde el menu del modo anclado.");
         }
 
         // ==================================================================================
@@ -284,6 +318,20 @@ namespace DigitalTwin.MR
         // ==================================================================================
 
         private float AlturaSueloFisico() => _origenXR != null ? _origenXR.position.y : 0f;
+
+        /// <summary>
+        /// EL PLANO DEL SUELO FÍSICO, en mundo: el plano y=0 del espacio de seguimiento, que pasa
+        /// por la posición del origen de realidad extendida con la normal «arriba» DEL ORIGEN.
+        /// Hasta el 19-08 el suelo se tomaba como el plano horizontal de mundo a la cota del
+        /// origen; era lo mismo solo si el origen no estaba inclinado, y el de ARScene tenía
+        /// 4,16° de cabeceo: el rayo cortaba un plano que se apartaba del suelo real 7,3 cm por
+        /// metro (el registro del 19-08 guarda poses de anclaje a y=-0,04 y -0,30 m de
+        /// seguimiento para puntos que debían estar en el suelo). El bootstrap nivela hoy el
+        /// origen, así que ambos planos coinciden; este método es la definición correcta en
+        /// cualquier caso y deja de depender de que nadie vuelva a inclinarlo.
+        /// </summary>
+        private Plane PlanoSueloFisico() =>
+            _origenXR != null ? new Plane(_origenXR.up, _origenXR.position) : new Plane(Vector3.up, Vector3.zero);
 
         /// <summary>Punto de suelo de un elemento, en mundo: la misma regla que
         /// <see cref="PosicionDeNodos"/> pero a ras de suelo (sin sumar la altura de nodo).</summary>
@@ -579,8 +627,12 @@ namespace DigitalTwin.MR
             Transform raiz = _binder.RaizModelo;
             Vector3 modeloMundo = PuntoDeSueloMundo(estacion.Elemento, out string regla);
             Vector3 fisico = muestra.Punto;
-            float correccionVertical = AlturaSueloFisico() - fisico.y;   // 0 por construcción
-            fisico.y = AlturaSueloFisico();
+            // El punto físico se proyecta sobre el plano del suelo de seguimiento (el promedio de
+            // muestras ya está en él por construcción: la corrección mide cuánto se apartó, y se
+            // registra). Desde el 19-08 el plano es el del seguimiento, no el horizontal de mundo.
+            Plane sueloFisico = PlanoSueloFisico();
+            float correccionVertical = -sueloFisico.GetDistanceToPoint(fisico);
+            fisico = sueloFisico.ClosestPointOnPlane(fisico);
 
             var c = new MRRegistroPorPuntos.Correspondencia
             {
@@ -762,7 +814,6 @@ namespace DigitalTwin.MR
                 return;
             }
 
-            ReubicarPanelSiHaceFalta();
             ActualizarMarcaUsuario();
 
             bool esperandoPunto = _fase == Fase.Registrando && EstacionPendiente() != null
@@ -800,17 +851,17 @@ namespace DigitalTwin.MR
 
                 if (senalado == null && !sobrePanel && esperandoPunto)
                 {
-                    float sueloY = AlturaSueloFisico();
-                    if (rayo.direction.y < -0.05f)
+                    // Corte del rayo con el SUELO DE SEGUIMIENTO real (ver PlanoSueloFisico),
+                    // no con un plano horizontal de mundo: con el origen nivelado son el mismo
+                    // plano; si no lo estuviera, este es el suelo que pisa el operario.
+                    Plane suelo = PlanoSueloFisico();
+                    bool apuntaHaciaAbajo = Vector3.Dot(rayo.direction, -suelo.normal) > 0.05f;
+                    if (apuntaHaciaAbajo && suelo.Raycast(rayo, out float t) && t > 0f)
                     {
-                        float t = (sueloY - rayo.origin.y) / rayo.direction.y;
-                        if (t > 0f)
-                        {
-                            _impactoSuelo = rayo.origin + rayo.direction * t;
-                            _distanciaImpacto = t;
-                            _alturaMando = rayo.origin.y - sueloY;
-                            _impactoSueloValido = true;
-                        }
+                        _impactoSuelo = rayo.GetPoint(t);
+                        _distanciaImpacto = t;
+                        _alturaMando = suelo.GetDistanceToPoint(rayo.origin);
+                        _impactoSueloValido = true;
                     }
                 }
             }
@@ -836,6 +887,9 @@ namespace DigitalTwin.MR
                     : "Apunta con el mando al centro del umbral, en el suelo.";
                 _estado.color = _impactoSueloValido ? (enRango ? Verde : Ambar) : TextoNormal;
             }
+            // El estado cambia cada fotograma mientras se apunta (la distancia): se remaqueta
+            // solo si el texto ha cambiado, y el coste es medir tres textos.
+            if (_estado.text != _textoEstadoMaquetado) AjustarMaquetacion();
 
             if (senalado != null) _rig.MostrarImpacto(distBoton, true);
             else if (sobrePanel) _rig.MostrarImpacto(distPanel, false);
@@ -918,6 +972,17 @@ namespace DigitalTwin.MR
             _raiz.SetParent(transform, true);
             var material = MRIndicadoresDestino.MaterialSiempreVisible();
 
+            // Seguimiento perezoso: el mismo componente que coloca la ficha de metadatos, en su
+            // variante sin línea ni volumen de bloqueo (este panel trae el suyo y resuelve su
+            // rayo aquí). Holgura y retardo mayores que los de la ficha; razón y cifras en las
+            // constantes de seguimiento de la cabecera.
+            _colocador = gameObject.AddComponent<DigitalTwin.Metadata.WorldPanelPlacer>();
+            _colocador.DistanciaAlUsuario = DistanciaPanel;
+            _colocador.ZonaMuertaGrados = ZonaMuertaPanelGrados;
+            _colocador.Suavizado = SuavizadoPanel;
+            _colocador.MargenBajoVisionGrados = MargenBajoVisionPanelGrados;
+            _colocador.Initialize(canvas, conLineaYVolumen: false);
+
             var fondo = DigitalTwin.UI.RuntimeUIFactory.CreatePanel(_raiz, "Fondo", FondoPanel);
             DigitalTwin.UI.RuntimeUIFactory.StretchToParent((RectTransform)fondo.transform);
             if (material != null) fondo.material = material;
@@ -942,25 +1007,95 @@ namespace DigitalTwin.MR
                                xTexto, y, AnchoColumnaTexto, 100f, material);
             y += 106f;
 
-            // Botones en dos filas.
+            // Botones en dos filas. Las alturas de arriba son las iniciales: AjustarMaquetacion
+            // recoloca todo midiendo los textos en cuanto hay contenido.
             float anchoBoton = (AnchoColumnaTexto - 2 * 8f) / 3f;
-            CrearBoton("deshacer", "Deshacer ultimo", xTexto, y, anchoBoton, material);
-            CrearBoton("saltar", "Saltar esta puerta", xTexto + anchoBoton + 8f, y, anchoBoton, material);
-            CrearBoton("terminar", "Terminar y anclar", xTexto + 2 * (anchoBoton + 8f), y, anchoBoton, material);
+            CrearBoton("deshacer", "Deshacer ultimo", xTexto, y, anchoBoton, material, fila: 0);
+            CrearBoton("saltar", "Saltar esta puerta", xTexto + anchoBoton + 8f, y, anchoBoton, material, fila: 0);
+            CrearBoton("terminar", "Terminar y anclar", xTexto + 2 * (anchoBoton + 8f), y, anchoBoton, material, fila: 0);
             y += AltoBotonPx + 8f;
-            CrearBoton("recolocar", "Recolocar desde cero", xTexto, y, anchoBoton, material);
-            CrearBoton("reintentar", "Reintentar guardado", xTexto + anchoBoton + 8f, y, anchoBoton, material);
-            CrearBoton("cerrar", "Cerrar", xTexto + 2 * (anchoBoton + 8f), y, anchoBoton, material);
+            CrearBoton("recolocar", "Recolocar desde cero", xTexto, y, anchoBoton, material, fila: 1);
+            CrearBoton("reintentar", "Reintentar guardado", xTexto + anchoBoton + 8f, y, anchoBoton, material, fila: 1);
+            CrearBoton("cerrar", "Cerrar", xTexto + 2 * (anchoBoton + 8f), y, anchoBoton, material, fila: 1);
             y += AltoBotonPx + 10f;
 
-            TextoEn(_raiz, "Pie",
+            _pie = (RectTransform)TextoEn(_raiz, "Pie",
                 "Gatillo: tomar el punto o pulsar un boton  ·  A o X: ocultar (se reabre desde el menu)",
                 16, TextAnchor.MiddleLeft, TextoTenue, FontStyle.Normal,
-                xTexto, AltoPx - MargenPx - 28f, AnchoPx - 2 * MargenPx, 28f, material);
+                xTexto, AltoPx - MargenPx - AltoPiePx, AnchoPx - 2 * MargenPx, AltoPiePx, material).transform;
 
             ConstruirPlano(material);
 
             _raiz.gameObject.SetActive(false);
+        }
+
+        /// <summary>
+        /// Maqueta la columna de texto MIDIENDO, y hace crecer el panel si hace falta.
+        ///
+        /// Los textos se crean con desbordamiento vertical (no se recortan: en un panel de
+        /// registro es peor perder el final de un aviso que gastar píxeles), pero hasta el 19-08
+        /// cada bloque tenía una altura fija pensada para el mensaje corto: instrucción 190 px,
+        /// estado 56 px, calidad 100 px. Recorridos TODOS los mensajes que el código puede
+        /// emitir, varios no caben: la instrucción del primer punto con una etiqueta de puerta
+        /// larga (unos 300 caracteres a 22 px en 440 px de ancho = 8 líneas, 190 px son 7); el
+        /// estado «Error del anclaje: …» (hasta 92 caracteres a 20 px = 3 líneas, 56 px son 2);
+        /// y la calidad con tres puntos y sala lejana (unos 300 caracteres a 19 px = 7 líneas,
+        /// 100 px son 4). El texto sobrante se pintaba encima del bloque siguiente y de los
+        /// botones, que es lo que se vio el 19-08. Aquí cada bloque recibe la altura que su
+        /// texto necesita (<c>preferredHeight</c>, que ya tiene en cuenta el ajuste de línea al
+        /// ancho de la columna), los siguientes se recolocan debajo, los botones y el pie bajan
+        /// con ellos, y si la suma supera la altura base el panel entero crece —lienzo, volumen
+        /// del rayo y altura derivada del colocador—. Mismo principio que RecolocarCabecera en
+        /// la ficha de metadatos.
+        /// </summary>
+        private void AjustarMaquetacion()
+        {
+            if (_raiz == null || _instruccion == null || _estado == null || _calidad == null) return;
+
+            float y = MargenPx + 48f;
+            y += ColocarBloque(_instruccion, y, AltoMinimoInstruccionPx) + SeparacionBloquesPx;
+            y += ColocarBloque(_estado, y, AltoMinimoEstadoPx) + SeparacionBloquesPx;
+            y += ColocarBloque(_calidad, y, AltoMinimoCalidadPx) + SeparacionBloquesPx;
+            _textoEstadoMaquetado = _estado.text;
+
+            foreach (var b in _botones)
+            {
+                if (b.Rect == null) continue;
+                b.Rect.anchoredPosition = new Vector2(b.Rect.anchoredPosition.x,
+                                                      -(y + b.Fila * (AltoBotonPx + 8f)));
+            }
+            y += 2f * AltoBotonPx + 8f + 10f;
+
+            // La columna derecha (plano y su leyenda) es fija: 48 + 300 + 6 + 60 bajo el margen.
+            float altoColumnaDerecha = MargenPx + 48f + LadoPlanoPx + 6f + 60f + MargenPx;
+            float alto = Mathf.Max(AltoPx, y + AltoPiePx + MargenPx, altoColumnaDerecha);
+            if (_pie != null) _pie.anchoredPosition = new Vector2(MargenPx, -(alto - MargenPx - AltoPiePx));
+
+            if (!Mathf.Approximately(alto, _altoActualPx))
+            {
+                _altoActualPx = alto;
+                _raiz.sizeDelta = new Vector2(AnchoPx, alto);
+                if (_volumenPanel != null)
+                {
+                    _volumenPanel.size = new Vector3(AnchoPx, alto, 1f);
+                    _volumenPanel.center = new Vector3((0.5f - _raiz.pivot.x) * AnchoPx,
+                                                       (0.5f - _raiz.pivot.y) * alto, 0f);
+                }
+                if (_colocador != null) _colocador.RecalcularAlturaRelativa();
+                Debug.LogWarning($"[DigitalTwin][MR] Panel de anclaje: altura ajustada a {alto:0} px " +
+                                 $"({alto * AnchoMetros / AnchoPx:0.00} m) para que quepa el texto.");
+            }
+        }
+
+        /// <summary>Coloca un bloque de texto a la altura indicada con la altura que necesita
+        /// (al menos la mínima) y la devuelve.</summary>
+        private static float ColocarBloque(Text texto, float y, float minimo)
+        {
+            var rt = (RectTransform)texto.transform;
+            rt.anchoredPosition = new Vector2(MargenPx, -y);
+            float alto = Mathf.Max(minimo, texto.preferredHeight);
+            rt.sizeDelta = new Vector2(AnchoColumnaTexto, alto);
+            return alto;
         }
 
         private static Text TextoEn(RectTransform padre, string nombre, string contenido, int cuerpo,
@@ -977,7 +1112,7 @@ namespace DigitalTwin.MR
             return t;
         }
 
-        private void CrearBoton(string id, string texto, float x, float y, float ancho, Material material)
+        private void CrearBoton(string id, string texto, float x, float y, float ancho, Material material, int fila)
         {
             var rect = DigitalTwin.UI.RuntimeUIFactory.CreateRect(_raiz, "Boton_" + id);
             rect.anchorMin = rect.anchorMax = new Vector2(0f, 1f);
@@ -999,7 +1134,7 @@ namespace DigitalTwin.MR
             // El pivote está en la esquina superior izquierda: el volumen se centra en el rect.
             volumen.center = new Vector3(ancho * 0.5f, -AltoBotonPx * 0.5f, 0f);
 
-            _botones.Add(new Boton { Id = id, Texto = t, Fondo = fondo, Volumen = volumen });
+            _botones.Add(new Boton { Id = id, Texto = t, Fondo = fondo, Volumen = volumen, Rect = rect, Fila = fila });
         }
 
         private void PintarBoton(Boton b)
@@ -1102,6 +1237,7 @@ namespace DigitalTwin.MR
             BotonPorId("cerrar").Activo = true;
             foreach (var b in _botones) PintarBoton(b);
 
+            AjustarMaquetacion();
             RefrescarPlano();
         }
 
@@ -1138,15 +1274,18 @@ namespace DigitalTwin.MR
         private void Abrir()
         {
             if (_raiz == null) return;
-            ColocarPanelAnteElUsuario();
+            // El colocador reencuadra el panel ante el usuario (rumbo reiniciado) y lo activa; a
+            // partir de ahí lo sigue con holgura. La colocación directa queda como respaldo.
+            if (_colocador != null) _colocador.SeguirAlUsuario(true);
+            else ColocarPanelAnteElUsuario();
             _raiz.gameObject.SetActive(true);
-            _fueraDesde = -1f;
             RefrescarPanel();
         }
 
         private void Cerrar()
         {
             if (_raiz == null) return;
+            if (_colocador != null) _colocador.SeguirAlUsuario(false);
             _raiz.gameObject.SetActive(false);
             _ocultarAvisoEn = -1f;
             if (_cursorSuelo != null) _cursorSuelo.SetActive(false);
@@ -1165,23 +1304,9 @@ namespace DigitalTwin.MR
             _raiz.rotation = Quaternion.LookRotation(mirada, Vector3.up);
         }
 
-        /// <summary>El operario anda entre estaciones: si el panel queda lejos o fuera de la
-        /// vista un rato, se vuelve a poner delante. Con histeresis para que no persiga.</summary>
-        private void ReubicarPanelSiHaceFalta()
-        {
-            Vector3 aPanel = _raiz.position - _camara.transform.position;
-            float distancia = aPanel.magnitude;
-            Vector3 aPanelH = Vector3.ProjectOnPlane(aPanel, Vector3.up);
-            Vector3 miradaH = Vector3.ProjectOnPlane(_camara.transform.forward, Vector3.up);
-            float angulo = (aPanelH.sqrMagnitude > 1e-4f && miradaH.sqrMagnitude > 1e-4f)
-                ? Vector3.Angle(aPanelH, miradaH) : 0f;
-            bool fuera = distancia > DistanciaReubicarPanel || angulo > AnguloReubicarPanel;
-            if (!fuera) { _fueraDesde = -1f; return; }
-            if (_fueraDesde < 0f) { _fueraDesde = Time.time; return; }
-            if (Time.time - _fueraDesde < SegundosFueraAntesDeReubicar) return;
-            ColocarPanelAnteElUsuario();
-            _fueraDesde = -1f;
-        }
+        // ReubicarPanelSiHaceFalta (salto del panel al alejarse 2,2 m o girar 60° durante 0,8 s)
+        // se retiró el 19-08: el seguimiento lo hace ahora WorldPanelPlacer (ver Abrir y las
+        // constantes de seguimiento de la cabecera).
 
         // ==================================================================================
         //  Plano esquemático

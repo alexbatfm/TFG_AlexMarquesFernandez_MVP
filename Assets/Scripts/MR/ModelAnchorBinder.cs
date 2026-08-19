@@ -92,6 +92,12 @@ namespace DigitalTwin.MR
         private float _proximaConsulta;
         private int _refinadosAplicados;
 
+        /// <summary>Cadencia de la traza periódica de pose (origen, modelo, anclaje, con cabeceo
+        /// y alabeo), pedida por la revisión del 19-08 para distinguir un defecto de la
+        /// aplicación de una deriva del seguimiento del visor.</summary>
+        private const float SegundosEntreTrazasDePose = 5f;
+        private float _proximaTrazaDePose;
+
         public bool EstaVinculado { get; private set; }
         public Transform RaizModelo => _raizModelo;
         public IfcMetadata Referencia => _metaReferencia;
@@ -273,8 +279,63 @@ namespace DigitalTwin.MR
             return Mathf.Atan2(eje.x, eje.z) * Mathf.Rad2Deg;
         }
 
+        /// <summary>Cabeceo y alabeo de una rotación respecto a la vertical de mundo, medidos
+        /// sobre sus ejes (no los Euler de Unity, que se enredan cerca de ±180° de guiñada): la
+        /// inclinación total de su «arriba», y cuánto de ella cae en el plano de su eje Z
+        /// (cabeceo) y en el de su eje X (alabeo).</summary>
+        private static string CabeceoYAlabeo(Transform t)
+        {
+            float inclinacion = Vector3.Angle(t.up, Vector3.up);
+            float cabeceo = Mathf.Asin(Mathf.Clamp(t.forward.y, -1f, 1f)) * Mathf.Rad2Deg;
+            float alabeo = Mathf.Asin(Mathf.Clamp(t.right.y, -1f, 1f)) * Mathf.Rad2Deg;
+            return $"inclinacion {inclinacion:0.00}° (cabeceo {-cabeceo:0.00}°, alabeo {alabeo:0.00}°)";
+        }
+
+        /// <summary>
+        /// Traza periódica de pose, desde que el binder se inicializa (no solo tras anclar):
+        /// origen XR (posición, guiñada, cabeceo, alabeo), raíz del modelo (ídem), pose del
+        /// anclaje en seguimiento si existe, y la cota de la referencia del modelo EN
+        /// SEGUIMIENTO (debe ser ≈0 para un punto de suelo: si no lo es, el suelo del modelo no
+        /// está en el suelo físico, sea por el registro o por el origen). Es la evidencia que
+        /// separa «el modelo se inclina por la aplicación» de «deriva el seguimiento».
+        /// </summary>
+        private void TrazarPoseSiToca()
+        {
+            if (_raizModelo == null || Time.time < _proximaTrazaDePose) return;
+            _proximaTrazaDePose = Time.time + SegundosEntreTrazasDePose;
+
+            string origen = _origenXR != null
+                ? $"origen XR pos {_origenXR.position}, guiñada {_origenXR.eulerAngles.y:0.0}°, {CabeceoYAlabeo(_origenXR)}"
+                : "origen XR ausente";
+            string modelo = $"modelo pos {_raizModelo.position}, guiñada {GuinadaActualDelModelo():0.0}°, " +
+                            $"{CabeceoYAlabeo(_raizModelo)}";
+            string referencia = "referencia: ninguna";
+            if (_metaReferencia != null)
+            {
+                Vector3 refMundo = _metaReferencia.transform.position;
+                Vector3 refSeg = AMundoInverso(refMundo);
+                referencia = $"referencia '{_metaReferencia.ifcName}' en mundo y={refMundo.y:0.000}, en seguimiento " +
+                             $"({refSeg.x:0.00}, {refSeg.y:0.000}, {refSeg.z:0.00}) [origen del objeto, a nivel de suelo " +
+                             "en las puertas: su y de seguimiento deberia ser ~0 tras registrar]";
+            }
+            string anclaje = "anclaje: sin pose";
+            if (_anclaje != null && _anclaje.TryGetPose(out Pose poseAnclaje))
+            {
+                Vector3 ea = poseAnclaje.rotation.eulerAngles;
+                anclaje = $"anclaje (seguimiento) pos {poseAnclaje.position}, Euler ({ea.x:0.00}, {ea.y:0.0}, {ea.z:0.00})" +
+                          (_hayPoseAplicada
+                              ? $", salto respecto a la ultima aplicada {Vector3.Distance(poseAnclaje.position, _ultimaPoseAplicada.position) * 100f:0.0} cm / " +
+                                $"{Quaternion.Angle(poseAnclaje.rotation, _ultimaPoseAplicada.rotation):0.00}°"
+                              : string.Empty);
+            }
+            Debug.LogWarning($"[DigitalTwin][MR][Pose] {origen}; {modelo}; {referencia}; {anclaje}; " +
+                             $"reajustes del runtime aplicados: {_refinadosAplicados}.");
+        }
+
         private void Update()
         {
+            TrazarPoseSiToca();
+
             if (!_hayPoseAplicada || _anclaje == null || Time.time < _proximaConsulta) return;
             _proximaConsulta = Time.time + SegundosEntreConsultas;
 

@@ -99,17 +99,55 @@ namespace DigitalTwin.Metadata
         private bool _colocadoAlMenosUnaVez;
 
         private BoxCollider _volumenPanel;
+        private Canvas _canvas;
+
+        /// <summary>Cierto en el modo sin objeto (<see cref="SeguirAlUsuario"/>): el panel sigue
+        /// al usuario aunque no haya objetivo ni línea.</summary>
+        private bool _soloUsuario;
 
         public void Initialize(Canvas canvasMundo)
+        {
+            Initialize(canvasMundo, conLineaYVolumen: true);
+        }
+
+        /// <summary>
+        /// Variante para un panel que NO informa de un objeto sino del propio usuario (el panel
+        /// de colocación del anclaje, desde el 19-08): mismo seguimiento perezoso —zona muerta,
+        /// histéresis, giro suavizado, traslación inmediata, altura derivada del lienzo— pero sin
+        /// línea de unión ni volumen de bloqueo propio (ese panel ya trae el suyo y resuelve su
+        /// rayo por su cuenta). Se reutiliza el mecanismo en vez de escribir otro: cómo debe
+        /// moverse una interfaz ante la cara del usuario se decide una sola vez.
+        /// </summary>
+        public void Initialize(Canvas canvasMundo, bool conLineaYVolumen)
         {
             _panel = canvasMundo.transform;
             _camara = Camera.main != null ? Camera.main.transform : null;
             canvasMundo.worldCamera = Camera.main;
-            ConstruirVolumenDeBloqueo(canvasMundo);
-            ConstruirLinea();
+            _canvas = canvasMundo;
+            if (conLineaYVolumen)
+            {
+                ConstruirVolumenDeBloqueo(canvasMundo);
+                ConstruirLinea();
+            }
             CalcularAlturaRelativa(canvasMundo);
             _panel.gameObject.SetActive(false);
         }
+
+        /// <summary>
+        /// Vuelve a derivar la altura del panel del tamaño ACTUAL del lienzo. Para paneles cuya
+        /// altura cambia en ejecución (el de anclaje crece con el mensaje más largo): sin esto,
+        /// un panel que creciera conservaría la altura calculada para el tamaño antiguo y su
+        /// borde superior podría invadir la línea de visión.
+        /// </summary>
+        public void RecalcularAlturaRelativa()
+        {
+            if (_canvas != null) CalcularAlturaRelativa(_canvas);
+        }
+
+        /// <summary>Línea que une panel y objeto (null en la variante sin línea). Se expone para
+        /// que la visibilidad selectiva (<see cref="MR.MRVisibilidadSelectiva"/>) le añada la
+        /// pasada que se ve a través de los cerramientos.</summary>
+        public LineRenderer LineaDeUnion => _linea;
 
         /// <summary>
         /// Deriva la altura del panel del tamaño REAL del lienzo, aplicando la fórmula
@@ -216,10 +254,27 @@ namespace DigitalTwin.Metadata
             // que es el defecto que este componente viene a corregir.
             _rumboPanel = Vector3.zero;
             _siguiendo = false;
+            _soloUsuario = false;
 
             bool visible = objetivo != null;
             if (_panel != null) _panel.gameObject.SetActive(visible);
             if (_linea != null) _linea.gameObject.SetActive(visible);
+        }
+
+        /// <summary>
+        /// Modo sin objeto: el panel sigue al usuario con el mismo seguimiento perezoso, sin
+        /// línea. Con <c>true</c> se muestra y se reencuadra ante el usuario (el rumbo se
+        /// reinicia, como en cada selección nueva); con <c>false</c> se oculta.
+        /// </summary>
+        public void SeguirAlUsuario(bool activo)
+        {
+            _objetivo = null;
+            _soloUsuario = activo;
+            _colocadoAlMenosUnaVez = false;
+            _rumboPanel = Vector3.zero;
+            _siguiendo = false;
+            if (_panel != null) _panel.gameObject.SetActive(activo);
+            if (_linea != null) _linea.gameObject.SetActive(false);
         }
 
         private void LateUpdate()
@@ -227,7 +282,7 @@ namespace DigitalTwin.Metadata
             // En LateUpdate y no en Update: la cámara del visor la mueve el sistema de XR durante
             // Update, así que colocar antes daría un panel siempre un fotograma por detrás, que
             // en un HMD se percibe como un temblor muy molesto.
-            if (_objetivo == null || _panel == null) return;
+            if (_panel == null || (_objetivo == null && !_soloUsuario)) return;
             if (_camara == null)
             {
                 if (Camera.main == null) return;
@@ -251,7 +306,7 @@ namespace DigitalTwin.Metadata
             if (haciaUsuario.sqrMagnitude > 0.0001f)
                 _panel.rotation = Quaternion.LookRotation(haciaUsuario.normalized, Vector3.up);
 
-            ActualizarLinea();
+            if (_objetivo != null) ActualizarLinea();
         }
 
         /// <summary>

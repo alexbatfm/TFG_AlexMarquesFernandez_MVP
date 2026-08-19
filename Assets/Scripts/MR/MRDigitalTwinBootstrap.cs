@@ -246,16 +246,89 @@ namespace DigitalTwin.MR
         private const float AlturaVistaSinSuelo = 1.58f;
 
         /// <summary>
+        /// Cuánto está elevado el origen XR por encima del suelo que representa. Es 0 con
+        /// seguimiento a nivel de suelo (el suelo físico ES el plano y=0 del seguimiento) y
+        /// <see cref="AlturaVistaSinSuelo"/> en las dos degradaciones declaradas (Editor sin
+        /// XR, dispositivo sin modo de suelo), donde el origen se eleva para que la vista quede
+        /// a altura de ojos. Lo consume <see cref="MRNodeNavigator"/> para alinear el suelo de
+        /// seguimiento con el suelo del nodo SIN deshacer esa elevación. Se recalcula en cada
+        /// llamada a <see cref="AsegurarSeguimientoANivelDeSuelo"/> (también tras recargar).
+        /// </summary>
+        internal static float ElevacionOrigenSobreSuelo { get; private set; }
+
+        /// <summary>Inclinación del origen por debajo de la cual no se toca: es el ruido de un
+        /// cuaternión normalizado, no una inclinación real.</summary>
+        private const float InclinacionOrigenDespreciableGrados = 0.01f;
+
+        /// <summary>
+        /// NIVELA el origen de realidad extendida: le quita cabeceo y alabeo y conserva solo la
+        /// guiñada. HALLAZGO DEL 19-08 (agente A): el objeto «XR Origin (VR)» de ARScene.unity
+        /// está guardado con rotación (-0,0010, 0,9989, -0,0363, -0,0281), es decir, guiñada
+        /// -176,8° Y UN CABECEO DE 4,16°, y a y=0,441 m. Con seguimiento a nivel de suelo el
+        /// suelo físico es el plano y=0 del ESPACIO DE SEGUIMIENTO, y ese plano llega al mundo a
+        /// través de este transform: con cabeceo, el suelo real quedaba en el mundo como un
+        /// plano inclinado 4,16° (7,3 cm por metro) que pasa por el origen. Consecuencias, todas
+        /// medibles en el logcat del 19-08: (1) la altura de la vista en navegación por nodos
+        /// —que solo mueve el origen en planta— dependía de la POSICIÓN FÍSICA del usuario en su
+        /// sala (1,48–2,42 m para la misma persona de pie: 0,441 + estatura − 0,073·z_seg); (2)
+        /// en modo anclado el modelo, horizontal en el mundo, quedaba inclinado 4,16° respecto al
+        /// edificio real y su suelo se hundía o ascendía 7,3 cm por metro de distancia al eje
+        /// del área de juego (las poses de anclaje del log, y=-0,04 e y=-0,30 m en seguimiento
+        /// para puntos del SUELO del modelo, coinciden con esa inclinación al centímetro); (3)
+        /// el rayo del registro cortaba un plano que no era el suelo real, con decenas de cm de
+        /// error horizontal por punto. Nivelar aquí, al resolver el origen, cubre los dos modos y
+        /// cada recarga de la escena; la escena puede corregirse además a mano, pero este código
+        /// no depende de ello. La guiñada se conserva porque es arbitraria (el registro la mide;
+        /// la navegación la ignora). La altura del origen NO se toca aquí: en navegación la fija
+        /// el navegador al suelo de cada nodo; en modo anclado es la cota del suelo físico a la
+        /// que el registro lleva el modelo.
+        /// </summary>
+        internal static void NivelarOrigenXR(Transform origenXR)
+        {
+            if (origenXR == null) return;
+            float inclinacion = Vector3.Angle(origenXR.up, Vector3.up);
+            Vector3 adelante = Vector3.ProjectOnPlane(origenXR.forward, Vector3.up);
+            if (adelante.sqrMagnitude < 1e-6f) adelante = Vector3.ProjectOnPlane(origenXR.right, Vector3.up);
+            Quaternion soloGuinada = adelante.sqrMagnitude < 1e-6f
+                ? Quaternion.identity
+                : Quaternion.LookRotation(adelante.normalized, Vector3.up);
+
+            if (inclinacion < InclinacionOrigenDespreciableGrados)
+            {
+                Debug.LogWarning($"[DigitalTwin][AR] Origen XR ya nivelado: inclinacion {inclinacion:0.000}°, " +
+                                 $"guiñada {soloGuinada.eulerAngles.y:0.0}°, posicion {origenXR.position}.");
+                return;
+            }
+
+            Vector3 eulerAntes = origenXR.rotation.eulerAngles;
+            origenXR.rotation = soloGuinada;
+            Debug.LogWarning($"[DigitalTwin][AR] Origen XR NIVELADO: tenia {inclinacion:0.00}° de inclinacion " +
+                             $"(Euler antes x={eulerAntes.x:0.00}° y={eulerAntes.y:0.00}° z={eulerAntes.z:0.00}°); " +
+                             $"ahora solo guiñada {origenXR.rotation.eulerAngles.y:0.0}°, posicion {origenXR.position}. " +
+                             "Sin nivelar, el suelo de seguimiento llegaba al mundo inclinado: " +
+                             $"{Mathf.Tan(inclinacion * Mathf.Deg2Rad) * 100f:0.0} cm de error vertical por metro " +
+                             "(la y del origen la fija la navegacion al suelo de cada nodo; en modo anclado es la " +
+                             "cota del suelo fisico).");
+        }
+
+        /// <summary>
         /// Fija y VERIFICA el modo de origen de seguimiento a nivel de suelo, con el resultado
-        /// en el registro. Con origen de suelo, la altura de la cámara es la estatura real del
-        /// usuario sobre el suelo de juego y el programa no la toca nunca (los viajes son
-        /// horizontales). Dos degradaciones declaradas: en el Editor sin subsistema XR, el
+        /// en el registro, y NIVELA el origen (ver <see cref="NivelarOrigenXR"/>). Con origen de
+        /// suelo, la altura de la cámara sobre el suelo es la estatura real del usuario y el
+        /// programa no la escribe nunca: los viajes son horizontales y lo único que la navegación
+        /// fija es la cota del origen, para que el suelo físico (y=0 del seguimiento) coincida
+        /// con el suelo del nodo. Dos degradaciones declaradas: en el Editor sin subsistema XR, el
         /// origen se eleva a una altura de ojos mediana para que el respaldo de ratón vea como
         /// una persona de pie; y si el dispositivo no admitiera el modo de suelo, se aplica la
-        /// misma elevación —la estatura real no es conocible en ese modo— dejándolo dicho.
+        /// misma elevación —la estatura real no es conocible en ese modo— dejándolo dicho. En
+        /// ambos casos <see cref="ElevacionOrigenSobreSuelo"/> queda en esa elevación para que
+        /// el navegador la respete al alinear el suelo.
         /// </summary>
         internal static void AsegurarSeguimientoANivelDeSuelo(Transform origenXR)
         {
+            ElevacionOrigenSobreSuelo = 0f;
+            NivelarOrigenXR(origenXR);
+
             var subsistemas = new List<XRInputSubsystem>();
             SubsystemManager.GetSubsystems(subsistemas);
 
@@ -263,13 +336,16 @@ namespace DigitalTwin.MR
             {
 #if UNITY_EDITOR
                 origenXR.position += Vector3.up * AlturaVistaSinSuelo;
+                ElevacionOrigenSobreSuelo = AlturaVistaSinSuelo;
                 Debug.LogWarning("[DigitalTwin][AR] Sin subsistema XR (modo Play del Editor): " +
                                  $"origen elevado {AlturaVistaSinSuelo:0.00} m para que el " +
-                                 "respaldo de raton vea a altura de ojos de una persona de pie.");
+                                 "respaldo de raton vea a altura de ojos de una persona de pie " +
+                                 "(ALTURA APLICADA: constante AlturaVistaSinSuelo; el navegador " +
+                                 "la conserva al alinear el suelo de cada nodo).");
 #else
                 Debug.LogWarning("[DigitalTwin][AR] Sin subsistema XR de entrada: no se puede " +
                                  "fijar el origen de seguimiento. La altura de la vista queda " +
-                                 "en manos de la escena.");
+                                 "en manos de la escena (ALTURA APLICADA: ninguna).");
 #endif
                 return;
             }
@@ -290,10 +366,21 @@ namespace DigitalTwin.MR
                 if (resuelto != TrackingOriginModeFlags.Floor)
                 {
                     origenXR.position += Vector3.up * AlturaVistaSinSuelo;
+                    ElevacionOrigenSobreSuelo = AlturaVistaSinSuelo;
                     Debug.LogWarning("[DigitalTwin][AR] El dispositivo NO ha quedado en origen " +
                                      $"de suelo: se eleva el origen {AlturaVistaSinSuelo:0.00} m " +
                                      "como altura de ojos mediana (degradacion declarada; la " +
-                                     "estatura real no es conocible en este modo).");
+                                     "estatura real no es conocible en este modo). ALTURA " +
+                                     "APLICADA: constante AlturaVistaSinSuelo.");
+                }
+                else
+                {
+                    Debug.LogWarning("[DigitalTwin][AR] ALTURA APLICADA: ninguna. Con origen Floor el " +
+                                     "programa no suma nada a la vista; la altura de la camara sobre " +
+                                     "el suelo de seguimiento es la del visor, y la cota del origen " +
+                                     $"(ahora y={origenXR.position.y:0.000}) la fija el navegador al " +
+                                     "suelo del nodo o, en modo anclado, es el suelo fisico al que " +
+                                     "el registro lleva el modelo.");
                 }
             }
         }
@@ -513,6 +600,13 @@ namespace DigitalTwin.MR
                 resaltador.Limpiar();
                 colocadorLocal.Seguir(null);
             };
+
+            // Visibilidad selectiva (T10, versión reducida, 19-08): el sensor cuya ficha está
+            // abierta se sigue viendo a través de los cerramientos —con la parte oculta
+            // dibujada DISTINTA, y la línea y la caja a guiones tras el muro—. Se engancha a
+            // los mismos eventos que el resaltado y el colocador, después de ellos. En los dos
+            // modos; si se quisiera solo en anclado, esta línea se mueve a MontarAnclado.
+            MRVisibilidadSelectiva.Instalar(panel, resaltador, colocador, index);
 
             yield return null;
 
