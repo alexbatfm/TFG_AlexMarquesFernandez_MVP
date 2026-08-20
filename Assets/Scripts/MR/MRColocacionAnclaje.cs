@@ -528,8 +528,8 @@ namespace DigitalTwin.MR
                 Vector3 s = PuntoDeSueloMundo(_plan[i].Elemento, out _);
                 texto.Append($" {i + 1}: {_plan[i].Etiqueta} ({s.x:0.0}, {s.z:0.0}){(_plan[i].Tomada ? " [tomada]" : "")};");
             }
-            Debug.LogWarning($"[DigitalTwin][MR] Plan de estaciones de registro:{texto} — separadas y no " +
-                             "alineadas (regla de colocacion de fiduciales, West et al. 2001).");
+            Debug.LogWarning($"[DigitalTwin][MR] Plan de estaciones de registro:{texto} — lo mas " +
+                             "separadas que el edificio permita.");
         }
 
         private static float AreaTriangulo(Vector3 a, Vector3 b, Vector3 c)
