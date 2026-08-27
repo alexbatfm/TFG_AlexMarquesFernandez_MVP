@@ -262,7 +262,7 @@ namespace DigitalTwin.MR
 
         /// <summary>
         /// NIVELA el origen de realidad extendida: le quita cabeceo y alabeo y conserva solo la
-        /// guiñada. HALLAZGO DEL 19-08 (agente A): el objeto «XR Origin (VR)» de ARScene.unity
+        /// guiñada. Hallazgo del 19-08-2026: el objeto «XR Origin (VR)» de ARScene.unity
         /// está guardado con rotación (-0,0010, 0,9989, -0,0363, -0,0281), es decir, guiñada
         /// -176,8° Y UN CABECEO DE 4,16°, y a y=0,441 m. Con seguimiento a nivel de suelo el
         /// suelo físico es el plano y=0 del ESPACIO DE SEGUIMIENTO, y ese plano llega al mundo a

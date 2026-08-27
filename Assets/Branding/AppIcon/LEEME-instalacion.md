@@ -44,6 +44,6 @@ y el azul `#223D71` es el institucional muestreado del propio
 
 ## 5. Aviso sobre git
 
-Los `.png` están en `.gitattributes` como LFS-tracked y `git-lfs` no existe en el
-entorno de Claude: **estos ficheros hay que añadirlos al repo desde Windows**,
-igual que se hizo con `logo_unizar_negativo.png` y `splash_vr_unizar.png`.
+Los `.png` están declarados en `.gitattributes` como LFS-tracked, así que **hay que
+añadirlos al repositorio desde una máquina con `git-lfs` instalado**, igual que se
+hizo con `logo_unizar_negativo.png` y `splash_vr_unizar.png`.

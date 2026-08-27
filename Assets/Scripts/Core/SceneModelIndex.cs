@@ -118,8 +118,10 @@ namespace DigitalTwin.Core
                     index.Spaces.Add(meta);
                 }
 
-                // Fuera de la cadena if/else anterior: una definición de tipo puede ser además
-                // de espacio (IfcSpaceType), y en ese caso debe entrar en las dos listas.
+                // Fuera de la cadena if/else anterior: la clasificación de tipo es ortogonal
+                // a ella. Las tres listas anteriores exigen igualdad exacta de tipo (un
+                // IfcSpaceType NO entra en Spaces, que exige "IfcSpace"), y esta lista debe
+                // quedar completa sea cual sea el resultado de esa cadena.
                 if (EsDefinicionDeTipo(meta.ifcType))
                 {
                     index.TypeDefinitions.Add(meta);

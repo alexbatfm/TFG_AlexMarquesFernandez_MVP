@@ -1,8 +1,11 @@
 # Gemelo Digital — MVP Unity — Notas de desarrollo
 
 Este documento registra cómo ha quedado estructurado cada sistema del MVP, a medida que se
-implementa siguiendo el roadmap de 5 fases. Está pensado para que cualquiera (incluida una
-futura sesión de Claude) entienda el diseño sin tener que releer todo el código.
+implementa siguiendo el roadmap de 5 fases. Está pensado para que quien abra el proyecto entienda
+el diseño sin tener que releer todo el código.
+
+> **Para instalar y ejecutar la aplicación sin abrir Unity, ver `DESPLIEGUE.md`.** Este documento
+> es de diseño; aquél, de despliegue.
 
 > **Nota de estado (2026-08-10):** este documento describe el diseño de las Fases 1-5 tal como
 > se escribió el 2026-08-08, sin acceso a Editor ni hardware. Desde entonces las Fases 1-4 se
@@ -361,10 +364,10 @@ errores de compilación o de referencias rotas la primera vez que se abra el pro
 
 ### Limitaciones conocidas
 
-- **Sin AR todavía.** Este roadmap cubre navegación + metadatos + IoT en modo escritorio/3D de
-  escritorio; la integración de AR Foundation sobre esta misma base (mencionada como siguiente
-  pieza lógica en `TFG/CLAUDE.md`) no forma parte de este roadmap y queda para una fase
-  posterior.
+- ~~**Sin AR todavía.**~~ **Superado.** Cuando se escribió esta línea el roadmap cubría solo
+  navegación, metadatos e IoT en escritorio. La capa de Realidad Aumentada se desarrolló después
+  sobre HTC Vive Focus Vision con VIVE OpenXR —no con AR Foundation— y es la Fase 5 de este mismo
+  documento.
 - **Rendimiento con MeshCollider no convexos:** `ColliderBootstrapper` añade un `MeshCollider`
   a cada objeto con malla que no tenga collider (varios cientos en este modelo). Es un coste
   único al arrancar la escena, pero si el modelo creciera mucho podría notarse en el tiempo de
