@@ -265,6 +265,15 @@ namespace DigitalTwin.MR
 
         private void Update()
         {
+            // Con la camara de transparencia activa (selector de modo y modo anclado), el mando
+            // real ya se ve por el video: dibujar encima el modelo virtual lo duplica sin
+            // coincidir del todo en forma y pose. Se oculta SOLO la malla del modelo; el rayo y
+            // la leyenda se quedan, que aportan lo que el mando fisico no ensena. Se consulta
+            // Activado (la intencion) y no ConfirmadaActiva: si la capa fallara un fotograma,
+            // un modelo parpadeante seria peor que un modelo de mas.
+            bool camaraActiva = MRPassthroughController.Instancia != null &&
+                                MRPassthroughController.Instancia.Activado;
+
             foreach (var mano in _manos)
             {
                 var dispositivo = InputDevices.GetDeviceAtXRNode(mano.Nodo);
@@ -277,8 +286,9 @@ namespace DigitalTwin.MR
                 // respaldo de ratón del Editor nunca hay mano válida, así que no se dibuja
                 // ningún mando: no hay mano que representar.
                 mano.Linea.enabled = mano.Valida;
-                if (mano.Modelo != null && mano.Modelo.activeSelf != mano.Valida)
-                    mano.Modelo.SetActive(mano.Valida);
+                bool modeloVisible = mano.Valida && !camaraActiva;
+                if (mano.Modelo != null && mano.Modelo.activeSelf != modeloVisible)
+                    mano.Modelo.SetActive(modeloVisible);
                 if (mano.Leyenda != null && mano.Leyenda.activeSelf != mano.Valida)
                     mano.Leyenda.SetActive(mano.Valida);
                 if (!mano.Valida) { mano.GatilloAnterior = false; mano.BotonMenuAnterior = false; continue; }
